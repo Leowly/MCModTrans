@@ -1,4 +1,4 @@
-﻿"""Command-line interface for Minecraft Mod Translation Tool."""
+"""Command-line interface for Minecraft Mod Translation Tool."""
 
 from __future__ import annotations
 
@@ -43,7 +43,7 @@ def _pick_mods_folder() -> tuple[Path, str]:
         if not raw:
             click.echo("路径不能为空。", err=True)
             continue
-        for q in ('"', "'", "“", "”", "‘", "’"):
+        for q in ('"', "'", """, """, "'", "'"):
             raw = raw.strip(q)
         p = Path(raw).expanduser().resolve()
         if p.is_dir():
@@ -397,30 +397,91 @@ def translate(
         else:
             click.echo("已跳过同步（下次启动仍会提示）")
 
-    # --- Stage 2: Build batches ---
-    click.echo("\n=== 第2步: 构建翻译批次 ===")
-    effective_max_keys = cfg.ai.max_keys_per_call
-    batcher = Batcher(max_batch_keys=effective_max_keys)
-    click.echo(f"每批最多 {effective_max_keys} 条")
-    batches = batcher.group(all_mod_assets)
-
-    if not batches:
+    # --- Stage 2: Check translation memory first ---
+    click.echo("\n=== 第2步: 检查翻译记忆库 ===")
+    
+    # 收集所有待翻译的 key
+    all_untranslated: dict[str, str] = {}  # key → en_text
+    all_existing_ref: dict[str, str] = {}  # key → zh_text
+    
+    for mod in all_mod_assets:
+        from .translator.batcher import Batcher
+        untranslated = Batcher._untranslated_keys(mod)
+        for key in untranslated:
+            all_untranslated[key] = mod.english_entries[key]
+        
+        # existing Chinese as reference
+        for key, zh_value in mod.existing_chinese.items():
+            en_value = mod.english_entries.get(key)
+            if en_value is None or zh_value.strip() != en_value.strip():
+                all_existing_ref[key] = zh_value
+    
+    if not all_untranslated:
         click.echo("所有条目已完成翻译 — 无需调用 AI！")
         cfg.general.output_dir = output_path
         _package_output(all_mod_assets, cfg, report, total_start, mc_version)
         return
+    
+    # 对所有待翻译条目查询翻译记忆库
+    tm_hits = tm.lookup_batch(all_untranslated)
+    tm_hit_count = len(tm_hits)
+    tm_miss_keys = {k for k in all_untranslated.keys() if k not in tm_hits}
+    
+    click.echo(f"待翻译: {len(all_untranslated)} 条")
+    click.echo(f"记忆库命中: {tm_hit_count} 条")
+    click.echo(f"需要 AI 翻译: {len(tm_miss_keys)} 条")
+    
+    if not tm_miss_keys:
+        click.echo("\n所有条目已在翻译记忆库中 — 跳过 AI 调用！")
+        # 应用记忆库命中到所有 mod
+        for mod in all_mod_assets:
+            zh_out: dict[str, str] = {}
+            for k in mod.english_entries:
+                if k in tm_hits:
+                    zh_out[k] = tm_hits[k]
+                elif k in mod.existing_chinese:
+                    en = mod.english_entries.get(k)
+                    zh = mod.existing_chinese[k]
+                    if en is not None and zh.strip() != en.strip():
+                        zh_out[k] = zh
+                else:
+                    zh_out[k] = mod.english_entries[k]
+            mod.chinese_entries = zh_out
+        
+        # 计数
+        for mod in all_mod_assets:
+            report.translated_keys += len(mod.chinese_entries)
+            already_good = {
+                k for k, v in mod.existing_chinese.items()
+                if k in mod.english_entries
+                and v.strip() != mod.english_entries[k].strip()
+            }
+            report.skipped_keys += len(already_good)
+        
+        cfg.general.output_dir = output_path
+        _package_output(all_mod_assets, cfg, report, total_start, mc_version)
+        return
 
+    # --- Stage 3: Build batches (only for TM miss keys) ---
+    click.echo("\n=== 第2步: 构建翻译批次（仅记忆库缺失部分） ===")
+    effective_max_keys = cfg.ai.max_keys_per_call
+    batcher = Batcher(max_batch_keys=effective_max_keys)
+    click.echo(f"每批最多 {effective_max_keys} 条")
+    
+    # 构建仅包含 TM miss 的临时 mod 数据
+    batches = batcher.group_partial_keys(all_mod_assets, tm_miss_keys)
+    
     click.echo(f"共 {len(batches)} 个批次, {sum(b.total_keys for b in batches)} 条待翻译")
 
-    # --- Stage 3: AI Translation ---
+    # --- Stage 4: AI Translation ---
     click.echo(f"\n=== 第3步: AI 翻译 ===\n模型: {cfg.ai.model}  |  API: {cfg.ai.api_base}")
 
     total_batches = len(batches)
 
     # 全局翻译累积: lang_key → zh_text
-    all_translations: dict[str, str] = {}
+    all_translations: dict[str, str] = dict(tm_hits)  # 初始化为记忆库命中
     # 记忆库命中: lang_key → zh_text
-    all_tm_hits: dict[str, str] = {}
+    all_tm_hits: dict[str, str] = dict(tm_hits)
     # 待写入记忆库的新翻译: en_text → zh_text
     tm_new_entries: dict[str, str] = {}
 
@@ -438,42 +499,16 @@ def translate(
                     f"\r  [{batch_idx}/{total_batches}] {batch.batch_id}...",
                     nl=False,
                 )
-                # 记忆库查重
-                tm_hits = tm.lookup_batch(batch.entries)
-                if tm_hits:
-                    all_tm_hits.update(tm_hits)
-
-                # 全部命中记忆库 — 跳过 AI 调用
-                if len(tm_hits) == len(batch.entries):
-                    all_translations.update(tm_hits)
-                    logger.info(
-                        "批次 %s: 记忆库全命中 %d 条，跳过 AI",
-                        batch.batch_id, len(tm_hits),
-                    )
-                    click.echo(
-                        f"\r  [{batch_idx}/{total_batches}] {batch.batch_id} "
-                        f"(全记忆库命中 {len(tm_hits)} 条) ✓"
-                    )
-                    continue
-
-                if tm_hits:
-                    click.echo(
-                        f"\r  [{batch_idx}/{total_batches}] {batch.batch_id} "
-                        f"(记忆库 {len(tm_hits)}/{len(batch.entries)})"
-                    )
 
                 result = await ai_client.translate_batch(batch)
                 report.api_calls += 1
 
                 if result.success:
-                    # 合并记忆库 + AI 翻译
-                    merged = dict(tm_hits)
-                    merged.update(result.translations)  # AI 优先
-                    all_translations.update(merged)
+                    all_translations.update(result.translations)
                     # 记录内存中真正由 AI 新翻的（en_text → zh_text）
                     ai_new = {
                         k: v for k, v in result.translations.items()
-                        if k not in tm_hits and v
+                        if v
                     }
                     for k, zh in ai_new.items():
                         en = batch.entries.get(k)
@@ -491,12 +526,10 @@ def translate(
                         f"\r  [{batch_idx}/{total_batches}] {batch.batch_id} ✗",
                         err=True,
                     )
-                    # 失败：记忆库命中 + English 兜底
-                    fallback = dict(tm_hits)
+                    # 失败：English 兜底
                     for k, en in batch.entries.items():
-                        if k not in fallback:
-                            fallback[k] = en
-                    all_translations.update(fallback)
+                        if k not in all_translations:
+                            all_translations[k] = en
 
             # ================================================================
             # Phase 2: 集中补译所有缺失的 key
@@ -580,13 +613,12 @@ def translate(
     if tm_new_entries:
         added = tm.remember_batch(tm_new_entries, source="ai")
         tm.export_json()
-        tm_hit_count = len(all_tm_hits)
         click.echo(
-            f"翻译记忆库: 本次记忆库命中 {tm_hit_count} 条, 新增 {added} 条"
+            f"翻译记忆库: 本次记忆库命中 {len(all_tm_hits)} 条, 新增 {added} 条"
         )
     tm.close()
 
-    # --- Stage 4: Package ---
+    # --- Stage 5: Package ---
     cfg.general.output_dir = output_path
     _package_output(all_mod_assets, cfg, report, total_start, mc_version)
 
