@@ -115,6 +115,104 @@ class Batcher:
         )
         return batches
 
+    def group_partial_keys(
+        self,
+        mods: list[ModAssets],
+        key_filter: set[str],
+    ) -> list[TranslationBatch]:
+        """Group mods into translation batches, but only for specific keys.
+
+        This is useful when you want to batch only a subset of keys
+        (e.g., those not found in translation memory).
+
+        Args:
+            mods: List of mods to batch.
+            key_filter: Set of keys to include in batches. Keys outside this set
+                       will be ignored.
+
+        Returns:
+            List of TranslationBatch objects, each ≤ max_batch_keys keys.
+        """
+        # Filter to mods that have keys matching key_filter
+        pending: list[tuple[ModAssets, set[str]]] = []
+        for mod in mods:
+            untranslated = self._untranslated_keys(mod)
+            filtered = untranslated & key_filter
+            if filtered:
+                pending.append((mod, filtered))
+
+        if not pending:
+            logger.info("没有需要翻译的条目（在指定 key 范围内）")
+            return []
+
+        # Sort by filtered key count descending
+        pending.sort(key=lambda x: len(x[1]), reverse=True)
+
+        batches: list[TranslationBatch] = []
+        bundle_mods: list[ModAssets] = []
+        bundle_keys: set[str] = set()
+
+        for mod, filtered_keys in pending:
+            key_count = len(filtered_keys)
+
+            # ---- large mod: split into sub-batches ----
+            if key_count > self.max_batch_keys:
+                # flush current bundle first
+                if bundle_mods:
+                    batches.append(self._create_batch(
+                        bundle_mods, self._bundle_id(bundle_mods),
+                        key_filter=bundle_keys,
+                    ))
+                    bundle_mods = []
+                    bundle_keys = set()
+
+                sorted_keys = sorted(filtered_keys)
+                total = len(sorted_keys)
+                chunks = (total + self.max_batch_keys - 1) // self.max_batch_keys
+                mod_name = mod.metadata.name or mod.modid
+                logger.info(
+                    "%s 有 %d 条待翻译，拆为 %d 批（每批 ≤ %d）",
+                    mod_name, total, chunks, self.max_batch_keys,
+                )
+                for i in range(0, total, self.max_batch_keys):
+                    chunk = set(sorted_keys[i : i + self.max_batch_keys])
+                    chunk_num = i // self.max_batch_keys + 1
+                    batches.append(self._create_batch(
+                        [mod],
+                        f"{mod.modid}/{chunk_num}",
+                        key_filter=chunk,
+                    ))
+                continue
+
+            # ---- small mod: try to add to bundle ----
+            if len(bundle_keys) + key_count > self.max_batch_keys and bundle_mods:
+                # would exceed — flush current bundle
+                batches.append(self._create_batch(
+                    bundle_mods, self._bundle_id(bundle_mods),
+                    key_filter=bundle_keys,
+                ))
+                bundle_mods = []
+                bundle_keys = set()
+
+            bundle_mods.append(mod)
+            bundle_keys |= filtered_keys
+
+        # flush final bundle
+        if bundle_mods:
+            batches.append(self._create_batch(
+                bundle_mods, self._bundle_id(bundle_mods),
+                key_filter=bundle_keys,
+            ))
+
+        # summary
+        solo_count = sum(1 for b in batches if len(b.mods) == 1)
+        bundle_count = sum(1 for b in batches if len(b.mods) > 1)
+        logger.info(
+            "共 %d 个批次（%d 个独立, %d 个合并，仅包含指定的 key）",
+            len(batches), solo_count, bundle_count,
+        )
+        return batches
+
     # ------------------------------------------------------------------
     # Helpers
     # ------------------------------------------------------------------
