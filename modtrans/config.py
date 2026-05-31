@@ -22,6 +22,7 @@ logger = logging.getLogger(__name__)
 # Config dataclasses
 # ---------------------------------------------------------------------------
 
+
 @dataclass
 class GeneralConfig:
     mods_dir: Path = Path("./mods")
@@ -36,12 +37,12 @@ class AIConfig:
     api_base: str = "https://api.openai.com/v1"
     api_key: str = ""
     model: str = "gpt-4o"
-    max_tokens: int = 4096
+    max_tokens: int = 65536
     temperature: float = 0.3
     max_retries: int = 3
     retry_base_delay: float = 2.0
     requests_per_minute: int = 50
-    max_keys_per_call: int = 200
+    max_keys_per_call: int = 1000
 
 
 @dataclass
@@ -53,18 +54,9 @@ class PromptConfig:
 
 
 @dataclass
-class BatcherConfig:
-    strategy: str = "author"
-    max_batch_keys: int = 500
-    min_keys_for_solo: int = 50
-
-
-@dataclass
 class PackagerConfig:
     pack_name: str = "ModTrans 自动汉化"
-    pack_description: str = (
-        "机器翻译的 Minecraft Mod 简体中文汉化资源包"
-    )
+    pack_description: str = "机器翻译的 Minecraft Mod 简体中文汉化资源包"
     pack_format: str = "auto"
 
 
@@ -80,7 +72,6 @@ class AppConfig:
     general: GeneralConfig = field(default_factory=GeneralConfig)
     ai: AIConfig = field(default_factory=AIConfig)
     prompt: PromptConfig = field(default_factory=PromptConfig)
-    batcher: BatcherConfig = field(default_factory=BatcherConfig)
     packager: PackagerConfig = field(default_factory=PackagerConfig)
     cache: CacheConfig = field(default_factory=CacheConfig)
 
@@ -102,69 +93,61 @@ def _load_toml(path: Path) -> dict[str, Any]:
 
 
 def _dict_to_config(data: dict[str, Any]) -> AppConfig:
-    """Convert a raw TOML dict to an AppConfig dataclass."""
+    """将 TOML 字典转为 AppConfig，缺失字段使用 dataclass 定义的默认值。"""
+    # 用 dataclass 字段默认值初始化，TOML 有则覆盖
     config = AppConfig()
 
     if "general" in data:
         g = data["general"]
         config.general = GeneralConfig(
-            mods_dir=Path(g.get("mods_dir", "./mods")),
-            output_dir=Path(g.get("output_dir", "./output_resource_pack")),
-            cache_dir=Path(g.get("cache_dir", "./.cache/modtrans")),
-            game_version=g.get("game_version", "auto"),
-            log_level=g.get("log_level", "INFO"),
+            mods_dir=Path(g.get("mods_dir", config.general.mods_dir)),
+            output_dir=Path(g.get("output_dir", config.general.output_dir)),
+            cache_dir=Path(g.get("cache_dir", config.general.cache_dir)),
+            game_version=g.get("game_version", config.general.game_version),
+            log_level=g.get("log_level", config.general.log_level),
         )
 
     if "ai" in data:
         a = data["ai"]
+        d = config.ai
         config.ai = AIConfig(
-            api_base=a.get("api_base", "https://api.openai.com/v1"),
-            api_key=a.get("api_key", ""),
-            model=a.get("model", "gpt-4o"),
-            max_tokens=int(a.get("max_tokens", 4096)),
-            temperature=float(a.get("temperature", 0.3)),
-            max_retries=int(a.get("max_retries", 3)),
-            retry_base_delay=float(a.get("retry_base_delay", 2.0)),
-            requests_per_minute=int(a.get("requests_per_minute", 50)),
-            max_keys_per_call=int(a.get("max_keys_per_call", 200)),
+            api_base=a.get("api_base", d.api_base),
+            api_key=a.get("api_key", d.api_key),
+            model=a.get("model", d.model),
+            max_tokens=int(a.get("max_tokens", d.max_tokens)),
+            temperature=float(a.get("temperature", d.temperature)),
+            max_retries=int(a.get("max_retries", d.max_retries)),
+            retry_base_delay=float(a.get("retry_base_delay", d.retry_base_delay)),
+            requests_per_minute=int(a.get("requests_per_minute", d.requests_per_minute)),
+            max_keys_per_call=int(a.get("max_keys_per_call", d.max_keys_per_call)),
         )
 
     if "prompt" in data:
         p = data["prompt"]
+        d = config.prompt
         config.prompt = PromptConfig(
-            custom_prefix=p.get("custom_prefix", ""),
-            system_prompt_file=p.get("system_prompt_file", ""),
-            glossary_file=p.get("glossary_file", ""),
-            include_builtin_references=bool(
-                p.get("include_builtin_references", True)
-            ),
-        )
-
-    if "batcher" in data:
-        b = data["batcher"]
-        config.batcher = BatcherConfig(
-            strategy=b.get("strategy", "author"),
-            max_batch_keys=int(b.get("max_batch_keys", 500)),
-            min_keys_for_solo=int(b.get("min_keys_for_solo", 50)),
+            custom_prefix=p.get("custom_prefix", d.custom_prefix),
+            system_prompt_file=p.get("system_prompt_file", d.system_prompt_file),
+            glossary_file=p.get("glossary_file", d.glossary_file),
+            include_builtin_references=bool(p.get("include_builtin_references", d.include_builtin_references)),
         )
 
     if "packager" in data:
         pk = data["packager"]
+        d = config.packager
         config.packager = PackagerConfig(
-            pack_name=pk.get("pack_name", "Auto Translated Chinese"),
-            pack_description=pk.get(
-                "pack_description",
-                "Machine-translated Simplified Chinese localization",
-            ),
-            pack_format=str(pk.get("pack_format", "auto")),
+            pack_name=pk.get("pack_name", d.pack_name),
+            pack_description=pk.get("pack_description", d.pack_description),
+            pack_format=str(pk.get("pack_format", d.pack_format)),
         )
 
     if "cache" in data:
         c = data["cache"]
+        d = config.cache
         config.cache = CacheConfig(
-            enabled=bool(c.get("enabled", True)),
-            max_age_days=int(c.get("max_age_days", 30)),
-            max_size_mb=int(c.get("max_size_mb", 500)),
+            enabled=bool(c.get("enabled", d.enabled)),
+            max_age_days=int(c.get("max_age_days", d.max_age_days)),
+            max_size_mb=int(c.get("max_size_mb", d.max_size_mb)),
         )
 
     return config

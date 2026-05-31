@@ -63,6 +63,8 @@ class TranslationBatch:
     batch_id: str  # e.g. "author_ObliviousSpartan" or "bundled_small_mods_1"
     mods: list[ModAssets]
     total_keys: int
+    entries: dict[str, str] = field(default_factory=dict)
+    # ^ key → en_text actually sent to AI in this batch (subset of mod.english_entries)
     existing_reference: dict[str, str] = field(default_factory=dict)
     # ^ existing zh_cn entries from all mods in batch, shown as reference to AI
     context_info: str = ""  # Added to user prompt for translation context
@@ -73,11 +75,13 @@ class TranslationResult:
     """Result of a single translation API call."""
 
     batch: TranslationBatch
-    translations: dict[str, str]  # key → Chinese text
+    translations: dict[str, str] = field(default_factory=dict)  # key → Chinese text
     model: str = ""
     usage: dict = field(default_factory=dict)  # token counts from API
     success: bool = False
     error: Optional[str] = None
+    missed_entries: dict[str, str] = field(default_factory=dict)
+    # ^ key → en_text that the AI failed to return (补译用)
 
 
 @dataclass
@@ -101,6 +105,7 @@ class PipelineReport:
 # --- Pack format constants ---
 
 # Map pack_format values to MC version strings
+# 数据来源: Minecraft Wiki — https://minecraft.wiki/w/Pack_format
 PACK_FORMAT_MAP: dict[int, str] = {
     1: "1.6.4-1.8.9",
     2: "1.9-1.10.2",
@@ -111,17 +116,16 @@ PACK_FORMAT_MAP: dict[int, str] = {
     7: "1.17-1.17.1",
     8: "1.18-1.18.2",
     9: "1.19-1.19.2",
-    10: "1.19.3",
-    11: "1.19.4",
-    12: "1.20-1.20.1",
-    13: "1.20.2",
-    14: "1.20.3-1.20.4",
-    15: "1.20.5-1.20.6",
-    16: "1.21",
-    17: "1.21.1",
-    18: "1.21.2-1.21.3",
-    19: "1.21.4",
-    20: "1.21.5",
+    12: "1.19.4",
+    13: "1.20-1.20.1",
+    14: "1.20.2",
+    15: "1.20.3-1.20.4",
+    18: "1.20.5-1.20.6",
+    22: "1.21-1.21.1",
+    24: "1.21.2-1.21.3",
+    32: "1.21.4",
+    34: "1.21.5",
+    75: "1.21.11+",
 }
 
 # pack_format >= 4 means modern (JSON) language files

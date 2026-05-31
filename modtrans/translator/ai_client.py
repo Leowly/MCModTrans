@@ -23,7 +23,6 @@ from ..models import ModAssets, TranslationBatch, TranslationResult
 from .prompt import (
     SYSTEM_PROMPT,
     build_user_message,
-    classify_existing_chinese,
 )
 
 logger = logging.getLogger(__name__)
@@ -95,19 +94,21 @@ class AIClient:
         Returns:
             TranslationResult with translated entries and usage metadata.
         """
-        # Flatten all English entries needing translation
-        all_entries: dict[str, str] = {}
-        for mod in batch.mods:
-            all_entries.update(mod.english_entries)
+        # 本批次要翻译的 key（由 Batcher 预筛，已排除已有汉化）
+        all_entries = dict(batch.entries)
 
-        # Analyze existing Chinese translations
-        all_existing: dict[str, str] = {}
-        for mod in batch.mods:
-            all_existing.update(mod.existing_chinese)
+        # 已有正确翻译（来自 batcher，供 AI 参考风格）
+        fully_translated = dict(batch.existing_reference)
 
-        fully_translated, keys_to_review = classify_existing_chinese(
-            all_entries, all_existing
-        )
+        # keys_to_review：zh_cn 有该 key 但值仍是英文（可能是专有名词）
+        keys_to_review: set[str] = set()
+        for mod in batch.mods:
+            for k in all_entries:
+                zh_val = mod.existing_chinese.get(k)
+                if zh_val is not None:
+                    en_val = mod.english_entries.get(k, "")
+                    if zh_val.strip() == en_val.strip():
+                        keys_to_review.add(k)
 
         # Build the user message
         user_message = build_user_message(
@@ -133,105 +134,40 @@ class AIClient:
                 error=str(e),
             )
 
-        # Parse and validate
+        # 解析并校验
         try:
             translations = await self._parse_response(response_text)
-        except AIResponseParseError as e:
-            logger.warning("批次 %s 响应解析失败: %s", batch.batch_id, e)
-            # Retry once with stricter instructions
-            try:
-                retry_msg = (
-                    user_message
-                    + "\n\nIMPORTANT: Your previous response was not valid JSON. "
-                    "Output ONLY a JSON object with NO markdown formatting."
-                )
-                response_text, usage2 = await self._call_api(
-                    system_prompt=SYSTEM_PROMPT,
-                    user_message=retry_msg,
-                )
-                usage["total_tokens"] = (
-                    usage.get("total_tokens", 0)
-                    + usage2.get("total_tokens", 0)
-                )
-                translations = await self._parse_response(response_text)
-            except Exception as e2:
-                logger.error("批次 %s 重试也失败了: %s", batch.batch_id, e2)
-                return TranslationResult(
-                    batch=batch,
-                    translations={},
-                    model=self._config.model,
-                    usage=usage,
-                    success=False,
-                    error=f"Parse failed after retry: {e2}",
-                )
+        except AIResponseParseError:
+            logger.warning("批次 %s JSON 解析失败，将纳入补译", batch.batch_id)
+            translations = {}
 
-        # Validate keys
+        # 期望的 key 集合 = 本批次的 key
         expected_keys = set(all_entries.keys())
-        # Remove keys that AI should skip (already in fully_translated)
-        expected_keys -= set(fully_translated.keys())
-        # Keys to review may or may not change — include them in validation
-        expected_keys |= keys_to_review
 
-        validation_errors = self._validate_response(translations, expected_keys)
-        if validation_errors:
-            logger.warning(
-                "批次 %s 校验警告: %s",
-                batch.batch_id,
-                "; ".join(validation_errors[:5]),
+        # 缺失的 key — 记录到 missed_entries，不在此处补译
+        missing_keys = expected_keys - set(translations.keys())
+        missed_entries = {
+            k: all_entries[k] for k in missing_keys if k in all_entries
+        }
+        if missed_entries:
+            logger.info(
+                "批次 %s: %d 个键未返回，纳入集中补译",
+                batch.batch_id, len(missed_entries),
             )
 
-            # 找出缺失的 key，补译一次
-            missing_keys = expected_keys - set(translations.keys())
-            if missing_keys:
-                logger.info(
-                    "批次 %s: 缺失 %d 个键，尝试补译",
-                    batch.batch_id,
-                    len(missing_keys),
-                )
-                missing_entries = {
-                    k: all_entries[k] for k in missing_keys if k in all_entries
-                }
-                if missing_entries:
-                    try:
-                        retry_msg = build_user_message(
-                            missing_entries,
-                            mod_context=f"补译 — {batch.context_info}",
-                        )
-                        retry_text, usage2 = await self._call_api(
-                            system_prompt=SYSTEM_PROMPT,
-                            user_message=retry_msg,
-                        )
-                        usage["total_tokens"] = (
-                            usage.get("total_tokens", 0)
-                            + usage2.get("total_tokens", 0)
-                        )
-                        retry_translations = await self._parse_response(retry_text)
-                        translations.update(retry_translations)
-                        still_missing = missing_keys - set(retry_translations.keys())
-                        if still_missing:
-                            logger.warning(
-                                "批次 %s: 补译后仍缺失 %d 个键，使用英文原文",
-                                batch.batch_id,
-                                len(still_missing),
-                            )
-                            for k in still_missing:
-                                if k in all_entries:
-                                    translations[k] = all_entries[k]
-                        else:
-                            logger.info(
-                                "批次 %s: 补译成功，%d 个键已补齐",
-                                batch.batch_id,
-                                len(missing_entries),
-                            )
-                    except Exception as e:
-                        logger.warning("批次 %s 补译失败: %s，使用英文原文", batch.batch_id, e)
-                        for k in missing_keys:
-                            if k in all_entries:
-                                translations[k] = all_entries[k]
+        # 校验（仅日志）
+        validation_errors = self._validate_response(translations, expected_keys)
+        if validation_errors:
+            logger.info(
+                "批次 %s: %s",
+                batch.batch_id,
+                "; ".join(validation_errors[:3]),
+            )
 
         return TranslationResult(
             batch=batch,
             translations=translations,
+            missed_entries=missed_entries,
             model=self._config.model,
             usage=usage,
             success=True,
@@ -257,6 +193,48 @@ class AIClient:
         response_text, _ = await self._call_api(SYSTEM_PROMPT, user_message)
         return await self._parse_response(response_text)
 
+    async def translate_missing(
+        self,
+        entries: dict[str, str],
+        context: str = "",
+    ) -> tuple[dict[str, str], dict]:
+        """Translate a batch of entries that were missed in the main pass.
+
+        Used for centralized 补译 after all mod batches finish.
+
+        Args:
+            entries: key → English text to translate.
+            context: Human-readable context for the API.
+
+        Returns:
+            (key → zh_text dict, usage dict).
+        """
+        user_message = build_user_message(
+            entries, mod_context=context or "集中补译",
+        )
+        response_text, usage = await self._call_api(
+            system_prompt=SYSTEM_PROMPT,
+            user_message=user_message,
+        )
+        try:
+            translations = await self._parse_response(response_text)
+        except AIResponseParseError:
+            logger.warning("补译 JSON 解析失败 (%d 键)", len(entries))
+            translations = {}
+
+        # Fill missing with English fallback
+        expected = set(entries.keys())
+        found = set(translations.keys())
+        still_missing = expected - found
+        if still_missing:
+            logger.warning(
+                "补译仍有 %d 个键未返回，使用英文原文", len(still_missing),
+            )
+            for k in still_missing:
+                translations[k] = entries[k]
+
+        return translations, usage
+
     # ------------------------------------------------------------------
     # Internal: API call
     # ------------------------------------------------------------------
@@ -278,15 +256,20 @@ class AIClient:
         if self._client is None:
             raise RuntimeError("AIClient 未初始化。请使用 'async with AIClient()'。")
 
-        payload = {
+        payload: dict[str, Any] = {
             "model": self._config.model,
             "max_tokens": self._config.max_tokens,
             "temperature": self._config.temperature,
+            "response_format": {"type": "json_object"},
             "messages": [
                 {"role": "system", "content": system_prompt},
                 {"role": "user", "content": user_message},
             ],
         }
+
+        # DeepSeek v4 系列默认开启思考模式，翻译不需要，关掉省 token
+        if "v4" in self._config.model.lower():
+            payload["thinking"] = {"type": "disabled"}
 
         last_error: Optional[Exception] = None
 
@@ -345,6 +328,12 @@ class AIClient:
 
                 # Log finish reason
                 finish_reason = choice.get("finish_reason", "unknown")
+                logger.debug(
+                    "API 响应 (finish=%s tokens=%s) 内容: %s",
+                    finish_reason,
+                    usage,
+                    content[:2000],
+                )
                 if finish_reason == "length":
                     logger.warning(
                         "API 响应被截断 (finish_reason=length) — "
@@ -376,32 +365,29 @@ class AIClient:
 
     @staticmethod
     async def _parse_response(raw_text: str) -> dict[str, str]:
-        """Extract a JSON object from the AI response.
+        """从 AI 响应中提取 JSON 对象。
 
-        Handles:
-        - Pure JSON: ``{"key": "value"}``
-        - Markdown code block: `` ```json {...} ``` ``
-        - Text with JSON embedded
+        已启用 response_format: json_object，AI 保证输出合法 JSON。
+        保留轻量级容错处理（markdown 代码块等边界情况）。
 
         Raises:
-            AIResponseParseError: If no valid JSON can be extracted.
+            AIResponseParseError: 无法解析为有效 JSON。
         """
         if not raw_text or not raw_text.strip():
             raise AIResponseParseError("AI 返回空响应")
 
         text = raw_text.strip()
+        logger.debug("AI 原始响应 (前 800 字符): %s", text[:800])
 
-        errors: list[str] = []
-
-        # Attempt 1: Direct JSON parse
+        # 直接解析 — JSON mode 下 99.9% 情况就是合法的
         try:
             result = json.loads(text)
             if isinstance(result, dict):
                 return _coerce_values(result)
-        except json.JSONDecodeError as e:
-            errors.append(f"Direct parse: {e}")
+        except json.JSONDecodeError:
+            pass
 
-        # Attempt 2: Extract from markdown code block
+        # 容错：从 markdown 代码块提取（极少发生）
         md_match = re.search(
             r"```(?:json)?\s*(\{.*?\})\s*```", text, re.DOTALL
         )
@@ -410,33 +396,11 @@ class AIClient:
                 result = json.loads(md_match.group(1))
                 if isinstance(result, dict):
                     return _coerce_values(result)
-            except json.JSONDecodeError as e:
-                errors.append(f"Markdown block: {e}")
+            except json.JSONDecodeError:
+                pass
 
-        # Attempt 3: Find first { ... } pair
-        start = text.find("{")
-        end = text.rfind("}")
-        if start >= 0 and end > start:
-            try:
-                result = json.loads(text[start : end + 1])
-                if isinstance(result, dict):
-                    return _coerce_values(result)
-            except json.JSONDecodeError as e:
-                errors.append(f"Brace-extract: {e}")
-
-                # Attempt 3b: Repair common issues (trailing commas,
-                # single-quoted strings)
-                try:
-                    repaired = _repair_json(text[start : end + 1])
-                    result = json.loads(repaired)
-                    if isinstance(result, dict):
-                        return _coerce_values(result)
-                except (json.JSONDecodeError, ValueError):
-                    pass
-
-        raise AIResponseParseError(
-            f"无法将 AI 响应解析为 JSON。错误: {'; '.join(errors)}"
-        )
+        logger.warning("无法解析的 AI 响应 (前 300 字符): %s", text[:300])
+        raise AIResponseParseError("AI 响应不是合法 JSON")
 
     @staticmethod
     def _validate_response(
@@ -516,25 +480,6 @@ def _coerce_values(data: dict) -> dict[str, str]:
             result[k] = str(v)
     return result
 
-
-def _repair_json(text: str) -> str:
-    """Attempt to repair common JSON formatting issues.
-
-    Handles:
-    - Trailing commas
-    - Single-quoted strings (some models do this)
-    - Unquoted keys
-    """
-    # Remove trailing commas before } or ]
-    text = re.sub(r",\s*(\}|\])", r"\1", text)
-
-    # Replace single quotes with double quotes (naive but often works)
-    # This is risky for text containing apostrophes, so only try if
-    # the direct parse failed
-    # Note: we don't auto-replace single quotes because many Chinese
-    # translations may contain them as punctuation
-
-    return text
 
 
 def _parse_retry_after(response: httpx.Response) -> Optional[float]:

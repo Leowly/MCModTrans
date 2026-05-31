@@ -141,6 +141,8 @@ class TranslationMemory:
         if not self._json_path.is_file():
             return False
 
+        self._ensure_tables()
+
         json_mtime = self._json_path.stat().st_mtime
         row = self.conn.execute(
             "SELECT value FROM meta WHERE key = 'json_sync_mtime'"
@@ -167,6 +169,7 @@ class TranslationMemory:
         Returns:
             中文翻译，如果没找到返回 None。
         """
+        self._ensure_tables()
         key = _hash(en_text)
         row = self.conn.execute(
             "SELECT zh_text FROM memory WHERE en_hash = ?", (key,)
@@ -184,6 +187,8 @@ class TranslationMemory:
         """
         if not entries:
             return {}
+
+        self._ensure_tables()
 
         # 收集所有 en_text 并计算哈希
         en_texts = list(entries.values())
@@ -275,6 +280,7 @@ class TranslationMemory:
         Returns:
             导出的 JSON 文件路径。
         """
+        self._ensure_tables()
         rows = self.conn.execute(
             "SELECT en_text, zh_text FROM memory ORDER BY en_text"
         ).fetchall()
@@ -300,6 +306,8 @@ class TranslationMemory:
         if not self._json_path.is_file():
             logger.info("JSON 记忆文件不存在: %s", self._json_path)
             return 0
+
+        self._ensure_tables()
 
         try:
             data = json.loads(self._json_path.read_text(encoding="utf-8"))

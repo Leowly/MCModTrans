@@ -183,15 +183,26 @@ class ResourcePack:
         return MODERN_PACK_FORMAT_THRESHOLD  # 4
 
     def _write_mcmeta(self, output_dir: Path, pack_format: int) -> None:
-        """写入 pack.mcmeta。"""
-        mcmeta = {
-            "pack": {
-                "pack_format": pack_format,
-                "description": self.description,
-            }
+        """写入符合 Minecraft Wiki 规范的 pack.mcmeta。
+
+        - pack_format: 核心格式号
+        - supported_formats: 1.20.3+ (pack_format >= 15) 支持的格式范围
+        - description: 资源包描述（纯文本或 JSON 对象）
+        """
+        pack: dict = {
+            "pack_format": pack_format,
+            "description": self.description,
         }
-        version_range = PACK_FORMAT_MAP.get(pack_format, "unknown")
-        mcmeta["pack"]["_mc_version_range"] = version_range
+
+        # 1.20.3+ (pack_format >= 15) 需要 supported_formats
+        if pack_format >= 15:
+            max_known = max(PACK_FORMAT_MAP.keys()) if PACK_FORMAT_MAP else pack_format
+            # max 至少等于 min
+            if max_known < pack_format:
+                max_known = pack_format
+            pack["supported_formats"] = [pack_format, max_known]
+
+        mcmeta = {"pack": pack}
 
         output_dir.joinpath("pack.mcmeta").write_text(
             json.dumps(mcmeta, ensure_ascii=False, indent=2) + "\n",

@@ -17,3 +17,7 @@ modtrans_output/
 
 # cache files
 .cache/
+
+pack.bat
+
+output
