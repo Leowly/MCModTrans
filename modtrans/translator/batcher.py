@@ -61,7 +61,7 @@ class Batcher:
                 pending.append(mod)
 
         if not pending:
-            logger.info("No mods need translation — all entries already have zh_cn")
+            logger.info("没有需要翻译的条目 — 所有文本已有汉化")
             return []
 
         # Dispatch to strategy

@@ -44,36 +44,35 @@ class JarParser:
         print(f"Found {len(assets.english_entries)} English entries")
     """
 
-    def __init__(self) -> None:
-        pass
+    def __init__(self, generate_untagged: bool = False) -> None:
+        self.generate_untagged = generate_untagged
 
     # ------------------------------------------------------------------
     # Public API
     # ------------------------------------------------------------------
 
     def parse_jar(self, jar_path: Path) -> ModAssets:
-        """Parse a single mod JAR and return its language assets.
+        """解析单个 mod JAR 并返回其语言资产。
 
         Args:
-            jar_path: Path to a .jar file in the mods folder.
+            jar_path: mods 文件夹中的 .jar 文件路径。
 
         Returns:
-            ModAssets with english_entries and optional existing_chinese.
+            包含 english_entries 和可选 existing_chinese 的 ModAssets。
 
         Raises:
-            JarParseError: If the JAR is corrupt, has no lang files, or
-                           has unreadable encoding.
+            JarParseError: JAR 损坏、无语言文件或编码不可读时抛出。
         """
         if not jar_path.is_file():
-            raise JarParseError(f"JAR file not found: {jar_path}")
+            raise JarParseError(f"JAR 文件不存在: {jar_path}")
 
         try:
             with ZipFile(jar_path, "r") as zf:
                 return self._parse_zip(jar_path, zf)
         except BadZipFile as e:
-            raise JarParseError(f"Corrupt JAR: {jar_path.name}: {e}") from e
+            raise JarParseError(f"JAR 文件损坏: {jar_path.name}: {e}") from e
         except OSError as e:
-            raise JarParseError(f"Cannot read JAR: {jar_path.name}: {e}") from e
+            raise JarParseError(f"无法读取 JAR: {jar_path.name}: {e}") from e
 
     # ------------------------------------------------------------------
     # Internal: ZIP traversal
@@ -91,9 +90,15 @@ class JarParser:
         lang_entries = _collect_lang_entries(zf)
 
         if not lang_entries:
+            if self.generate_untagged:
+                # 没有语言文件，从模型文件生成伪 en_us 条目
+                logger.info(
+                    "%s: 无语言文件，从模型文件名推断英文名", jar_path.name
+                )
+                return self._generate_from_models(jar_path, zf, metadata)
             raise JarParseError(
-                f"No language files found in {jar_path.name} "
-                f"(no assets/<modid>/lang/ directory)"
+                f"{jar_path.name} 中未找到语言文件 "
+                f"(无 assets/<modid>/lang/ 目录)"
             )
 
         # 4. Find en_us and zh_cn files
@@ -107,8 +112,14 @@ class JarParser:
                     en_us_paths.append(path)
 
         if not en_us_paths:
+            if self.generate_untagged:
+                # 有其他语言文件但没有 en_us，也尝试生成
+                logger.info(
+                    "%s: 无 en_us 语言文件，从模型文件名推断英文名", jar_path.name
+                )
+                return self._generate_from_models(jar_path, zf, metadata)
             raise JarParseError(
-                f"No en_us language file found in {jar_path.name}"
+                f"{jar_path.name} 中未找到 en_us 语言文件"
             )
 
         # 5. Parse English entries
@@ -139,6 +150,103 @@ class JarParser:
             jar_path=jar_path,
             source_encoding=source_encoding,
         )
+
+    # ------------------------------------------------------------------
+    # 模型文件条目生成（无语言文件时的回退方案）
+    # ------------------------------------------------------------------
+
+    def _generate_from_models(
+        self, jar_path: Path, zf: ZipFile, metadata: ModMetadata
+    ) -> ModAssets:
+        """从模型文件推断英文名称，生成伪 en_us 条目。
+
+        用于完全没有 en_us 语言文件的 mod。从 models/item/ 和
+        blockstates/ 的文件名推断标准 Minecraft lang key 和英文名。
+
+        例如:
+        - models/item/redstone_sword.json → item.<modid>.redstone_sword.name = "Redstone Sword"
+        - blockstates/copper_furnace.json → tile.<modid>.copper_furnace.name = "Copper Furnace"
+        """
+        import re
+        from pathlib import Path as _Path
+
+        names = zf.namelist()
+
+        # 推断 modid
+        modid = metadata.modid or self._infer_modid_from_any(names)
+
+        # 收集模型物品和方块
+        model_items: set[str] = set()
+        model_blocks: set[str] = set()
+
+        for name in names:
+            if "models/item/" in name and name.endswith(".json"):
+                model_items.add(_Path(name).stem)
+            elif "blockstates/" in name and name.endswith(".json"):
+                model_blocks.add(_Path(name).stem)
+
+        if not model_items and not model_blocks:
+            raise JarParseError(
+                f"{jar_path.name} 中既无语言文件也无模型文件，无法生成翻译"
+            )
+
+        # 检测游戏版本
+        game_version = self.detect_game_version(zf)
+
+        # 生成伪英文条目
+        english_entries: dict[str, str] = {}
+        _cleanup = re.compile(r"[^a-zA-Z0-9_]+")
+
+        for item_name in sorted(model_items):
+            key = f"item.{modid}.{item_name}.name"
+            readable = _cleanup.sub(" ", item_name)
+            readable = " ".join(w.capitalize() for w in readable.split())
+            english_entries[key] = readable
+
+        for block_name in sorted(model_blocks):
+            key = f"tile.{modid}.{block_name}.name"
+            readable = _cleanup.sub(" ", block_name)
+            readable = " ".join(w.capitalize() for w in readable.split())
+            english_entries[key] = readable
+
+        # 检查是否有现有的 zh_cn
+        existing_chinese = {}
+        zh_paths = [
+            n for n in names
+            if "/lang/" in n and n.endswith((".lang", ".json"))
+            and ("zh_cn" in n.lower() or "zh-cn" in n.lower())
+        ]
+        if zh_paths:
+            existing_chinese = self._parse_lang_files(zf, zh_paths, game_version)
+
+        logger.info(
+            "%s: 从模型文件生成 %d 条 en_us 条目 (%d 物品, %d 方块)",
+            jar_path.name,
+            len(english_entries),
+            len(model_items),
+            len(model_blocks),
+        )
+
+        return ModAssets(
+            modid=modid,
+            game_version=game_version,
+            english_entries=english_entries,
+            existing_chinese=existing_chinese,
+            metadata=metadata,
+            jar_path=jar_path,
+            source_encoding="generated",
+        )
+
+    @staticmethod
+    def _infer_modid_from_any(names: list[str]) -> str:
+        """从 ZIP 文件列表中的任意路径推断 modid。"""
+        for name in names:
+            parts = name.split("/")
+            if len(parts) >= 2 and parts[0] == "assets":
+                candidate = parts[1]
+                if candidate and candidate != "lang":
+                    return candidate
+        return "unknown"
 
     # ------------------------------------------------------------------
     # Game version detection
@@ -290,7 +398,7 @@ class JarParser:
 
                 merged.update(entries)
             except Exception as e:
-                logger.warning("Failed to parse %s in %s: %s",
+                logger.warning("解析语言文件失败 %s (来自 %s): %s",
                                path, zf.filename if hasattr(zf, 'filename') else "?", e)
 
         return merged

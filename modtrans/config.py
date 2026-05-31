@@ -61,9 +61,9 @@ class BatcherConfig:
 
 @dataclass
 class PackagerConfig:
-    pack_name: str = "Auto Translated Chinese"
+    pack_name: str = "ModTrans 自动汉化"
     pack_description: str = (
-        "Machine-translated Simplified Chinese localization for modded Minecraft"
+        "机器翻译的 Minecraft Mod 简体中文汉化资源包"
     )
     pack_format: str = "auto"
 
@@ -184,32 +184,32 @@ def load_config(path: Path | None = None) -> AppConfig:
     """
     if path is not None:
         if not path.is_file():
-            raise FileNotFoundError(f"Config file not found: {path}")
+            raise FileNotFoundError(f"配置文件未找到: {path}")
         raw = _load_toml(path)
-        logger.info("Loaded config from %s", path)
+        logger.info("已加载配置文件: %s", path)
         return _dict_to_config(raw)
 
     # Search default locations
     for search_path in _CONFIG_SEARCH_PATHS:
         if search_path.is_file():
             raw = _load_toml(search_path)
-            logger.info("Loaded config from %s", search_path)
+            logger.info("已加载配置文件: %s", search_path)
             return _dict_to_config(raw)
 
-    logger.info("No config file found, using defaults")
+    logger.info("未找到配置文件，使用默认设置")
     return AppConfig()
 
 
 def generate_example_config() -> str:
-    """Generate an example TOML config file content."""
+    """生成示例 TOML 配置文件内容。"""
     return """\
-# ModTrans Configuration
+# ModTrans 配置文件
 
 [ai]
-# API base URL — change for third-party providers (DeepSeek, Qwen, etc.)
+# API 接口地址 — 使用第三方 API 时修改此处 (DeepSeek、通义千问等)
 api_base = "https://api.openai.com/v1"
-# Your API key — paste it directly here
+# API 密钥 — 直接粘贴到这里
 api_key = "sk-your-api-key-here"
-# Model name
+# 模型名称
 model = "gpt-4o"
 """

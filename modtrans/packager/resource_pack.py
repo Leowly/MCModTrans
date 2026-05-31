@@ -34,7 +34,7 @@ logger = logging.getLogger(__name__)
 
 # Default pack.mcmeta description
 _DEFAULT_DESCRIPTION = (
-    "Machine-translated Simplified Chinese localization for modded Minecraft"
+    "机器翻译的 Minecraft Mod 简体中文汉化资源包"
 )
 
 
@@ -49,7 +49,7 @@ class ResourcePack:
 
     def __init__(
         self,
-        name: str = "Auto Translated Chinese",
+        name: str = "ModTrans 自动汉化",
         description: str = "",
         pack_format: int | None = None,
     ) -> None:
@@ -66,80 +66,107 @@ class ResourcePack:
         translated_mods: list[ModAssets],
         output_dir: Path,
     ) -> Path:
-        """Write the complete resource pack to output_dir.
+        """将资源包写入 output_dir。
 
-        Only writes mods that have non-empty chinese_entries.
+        流程:
+        1. 在 output_dir 下创建临时目录写入资源包结构
+        2. 打包为 .zip
+        3. 删除临时目录
+        4. 最终 output_dir 中只有 .zip 文件
 
         Args:
-            translated_mods: ModAssets with chinese_entries populated.
-            output_dir: Where to create the resource pack directory.
+            translated_mods: chinese_entries 已填充的 ModAssets。
+            output_dir: 输出目录（只保留最终的 ZIP）。
 
         Returns:
-            The output_dir path.
+            ZIP 文件路径。
         """
+        import shutil
+        import zipfile
+        import os
+
         output_dir.mkdir(parents=True, exist_ok=True)
 
-        # Determine overall pack format
+        # 确定 pack_format
         pack_format = self._determine_pack_format(translated_mods)
 
-        # Write pack.mcmeta
-        self._write_mcmeta(output_dir, pack_format)
+        # 在 output_dir 下创建临时工作目录
+        work_dir = output_dir / ".pack_tmp"
+        if work_dir.exists():
+            shutil.rmtree(work_dir)
+        work_dir.mkdir()
 
-        # Write language files
-        written_count = 0
-        skipped_count = 0
+        try:
+            # 写入 pack.mcmeta
+            self._write_mcmeta(work_dir, pack_format)
 
-        for mod in translated_mods:
-            if not mod.chinese_entries:
-                skipped_count += 1
-                continue
+            # 写入语言文件
+            written_count = 0
+            skipped_count = 0
 
-            lang_dir = output_dir / "assets" / mod.modid / "lang"
-            lang_dir.mkdir(parents=True, exist_ok=True)
+            for mod in translated_mods:
+                if not mod.chinese_entries:
+                    skipped_count += 1
+                    continue
 
-            if mod.game_version == GameVersion.LEGACY:
-                file_path = lang_dir / "zh_cn.lang"
-                content = format_lang(mod.chinese_entries)
-                file_path.write_text(content, encoding="utf-8")
-            elif mod.game_version == GameVersion.MODERN:
-                file_path = lang_dir / "zh_cn.json"
-                content = format_json(mod.chinese_entries)
-                file_path.write_text(content, encoding="utf-8")
-            else:
-                # UNKNOWN — write both formats for safety
-                lang_path = lang_dir / "zh_cn.lang"
-                lang_path.write_text(
-                    format_lang(mod.chinese_entries), encoding="utf-8"
-                )
-                json_path = lang_dir / "zh_cn.json"
-                json_path.write_text(
-                    format_json(mod.chinese_entries), encoding="utf-8"
-                )
+                lang_dir = work_dir / "assets" / mod.modid / "lang"
+                lang_dir.mkdir(parents=True, exist_ok=True)
 
-            written_count += 1
+                if mod.game_version == GameVersion.LEGACY:
+                    lang_dir.joinpath("zh_cn.lang").write_text(
+                        format_lang(mod.chinese_entries), encoding="utf-8"
+                    )
+                elif mod.game_version == GameVersion.MODERN:
+                    lang_dir.joinpath("zh_cn.json").write_text(
+                        format_json(mod.chinese_entries), encoding="utf-8"
+                    )
+                else:
+                    lang_dir.joinpath("zh_cn.lang").write_text(
+                        format_lang(mod.chinese_entries), encoding="utf-8"
+                    )
+                    lang_dir.joinpath("zh_cn.json").write_text(
+                        format_json(mod.chinese_entries), encoding="utf-8"
+                    )
 
-        # Also write a merged zh_cn file in the root assets for modpacks
-        # that need all translations in one place
-        self._write_merged(output_dir, translated_mods, pack_format)
+                written_count += 1
 
-        logger.info(
-            "Resource pack written: %d mods, %d skipped (no translations)",
-            written_count,
-            skipped_count,
-        )
-        return output_dir
+            # 写入合并文件
+            self._write_merged(work_dir, translated_mods, pack_format)
+
+            # 打包 ZIP
+            zip_name = f"ModTrans-汉化资源包-{pack_format}.zip"
+            zip_path = output_dir / zip_name
+
+            with zipfile.ZipFile(zip_path, "w", zipfile.ZIP_DEFLATED) as zf:
+                for file_path in sorted(work_dir.rglob("*")):
+                    if file_path.is_file():
+                        arcname = str(file_path.relative_to(work_dir)).replace(os.sep, "/")
+                        zf.write(file_path, arcname)
+
+            logger.info(
+                "资源包已打包: %d 个 mod, %d 个跳过 → %s",
+                written_count,
+                skipped_count,
+                zip_path,
+            )
+
+        finally:
+            # 清理临时目录
+            if work_dir.exists():
+                shutil.rmtree(work_dir)
+
+        return zip_path
 
     # ------------------------------------------------------------------
     # Internal
     # ------------------------------------------------------------------
 
     def _determine_pack_format(self, mods: list[ModAssets]) -> int:
-        """Determine the best pack_format for the resource pack.
+        """根据 mod 多数版本确定最佳 pack_format。
 
-        If the user explicitly set a pack_format, use that.
-        Otherwise, default to the majority game version:
-        - Majority LEGACY → pack_format 3 (1.12.2)
-        - Majority MODERN → pack_format 4 (1.13 minimum)
+        用户显式设置优先，否则按多数：
+        - 多数 LEGACY → pack_format 3 (1.12.2)
+        - 多数 MODERN → pack_format 4 (1.13+)
         """
         if self.pack_format is not None:
             return self.pack_format
@@ -156,21 +183,17 @@ class ResourcePack:
         return MODERN_PACK_FORMAT_THRESHOLD  # 4
 
     def _write_mcmeta(self, output_dir: Path, pack_format: int) -> None:
-        """Write pack.mcmeta to the output directory."""
+        """写入 pack.mcmeta。"""
         mcmeta = {
             "pack": {
                 "pack_format": pack_format,
                 "description": self.description,
             }
         }
-
-        # Add supported formats info as a comment-like field
-        # (Minecraft ignores unknown fields)
         version_range = PACK_FORMAT_MAP.get(pack_format, "unknown")
         mcmeta["pack"]["_mc_version_range"] = version_range
 
-        mcmeta_path = output_dir / "pack.mcmeta"
-        mcmeta_path.write_text(
+        output_dir.joinpath("pack.mcmeta").write_text(
             json.dumps(mcmeta, ensure_ascii=False, indent=2) + "\n",
             encoding="utf-8",
         )
@@ -181,29 +204,16 @@ class ResourcePack:
         mods: list[ModAssets],
         pack_format: int,
     ) -> None:
-        """Write a merged zh_cn.json file for convenience."""
+        """写入合并的 zh_cn_merged.json。"""
         merged: dict[str, str] = {}
-
         for mod in mods:
             if mod.chinese_entries:
                 merged.update(mod.chinese_entries)
-
         if not merged:
             return
 
         merged_dir = output_dir / "assets" / "minecraft" / "lang"
         merged_dir.mkdir(parents=True, exist_ok=True)
-
-        # Always write a merged JSON for reference
-        merged_path = merged_dir / "zh_cn_merged.json"
-        merged_path.write_text(
+        merged_dir.joinpath("zh_cn_merged.json").write_text(
             format_json(merged), encoding="utf-8"
         )
-
-    def _write_lang(self, path: Path, entries: dict[str, str]) -> None:
-        """Write .lang format file."""
-        path.write_text(format_lang(entries), encoding="utf-8")
-
-    def _write_json(self, path: Path, entries: dict[str, str]) -> None:
-        """Write .json format file."""
-        path.write_text(format_json(entries), encoding="utf-8")

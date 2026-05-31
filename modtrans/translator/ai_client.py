@@ -124,7 +124,7 @@ class AIClient:
                 user_message=user_message,
             )
         except Exception as e:
-            logger.error("API call failed for batch %s: %s", batch.batch_id, e)
+            logger.error("批次 %s API 调用失败: %s", batch.batch_id, e)
             return TranslationResult(
                 batch=batch,
                 translations={},
@@ -137,7 +137,7 @@ class AIClient:
         try:
             translations = await self._parse_response(response_text)
         except AIResponseParseError as e:
-            logger.warning("Response parse failed for batch %s: %s", batch.batch_id, e)
+            logger.warning("批次 %s 响应解析失败: %s", batch.batch_id, e)
             # Retry once with stricter instructions
             try:
                 retry_msg = (
@@ -155,7 +155,7 @@ class AIClient:
                 )
                 translations = await self._parse_response(response_text)
             except Exception as e2:
-                logger.error("Retry also failed for batch %s: %s", batch.batch_id, e2)
+                logger.error("批次 %s 重试也失败了: %s", batch.batch_id, e2)
                 return TranslationResult(
                     batch=batch,
                     translations={},
@@ -175,10 +175,59 @@ class AIClient:
         validation_errors = self._validate_response(translations, expected_keys)
         if validation_errors:
             logger.warning(
-                "Validation warnings for batch %s: %s",
+                "批次 %s 校验警告: %s",
                 batch.batch_id,
                 "; ".join(validation_errors[:5]),
             )
+
+            # 找出缺失的 key，补译一次
+            missing_keys = expected_keys - set(translations.keys())
+            if missing_keys:
+                logger.info(
+                    "批次 %s: 缺失 %d 个键，尝试补译",
+                    batch.batch_id,
+                    len(missing_keys),
+                )
+                missing_entries = {
+                    k: all_entries[k] for k in missing_keys if k in all_entries
+                }
+                if missing_entries:
+                    try:
+                        retry_msg = build_user_message(
+                            missing_entries,
+                            mod_context=f"补译 — {batch.context_info}",
+                        )
+                        retry_text, usage2 = await self._call_api(
+                            system_prompt=SYSTEM_PROMPT,
+                            user_message=retry_msg,
+                        )
+                        usage["total_tokens"] = (
+                            usage.get("total_tokens", 0)
+                            + usage2.get("total_tokens", 0)
+                        )
+                        retry_translations = await self._parse_response(retry_text)
+                        translations.update(retry_translations)
+                        still_missing = missing_keys - set(retry_translations.keys())
+                        if still_missing:
+                            logger.warning(
+                                "批次 %s: 补译后仍缺失 %d 个键，使用英文原文",
+                                batch.batch_id,
+                                len(still_missing),
+                            )
+                            for k in still_missing:
+                                if k in all_entries:
+                                    translations[k] = all_entries[k]
+                        else:
+                            logger.info(
+                                "批次 %s: 补译成功，%d 个键已补齐",
+                                batch.batch_id,
+                                len(missing_entries),
+                            )
+                    except Exception as e:
+                        logger.warning("批次 %s 补译失败: %s，使用英文原文", batch.batch_id, e)
+                        for k in missing_keys:
+                            if k in all_entries:
+                                translations[k] = all_entries[k]
 
         return TranslationResult(
             batch=batch,
@@ -227,7 +276,7 @@ class AIClient:
             Exception: On timeout or connection errors after max retries.
         """
         if self._client is None:
-            raise RuntimeError("AIClient not opened. Use 'async with AIClient()'.")
+            raise RuntimeError("AIClient 未初始化。请使用 'async with AIClient()'。")
 
         payload = {
             "model": self._config.model,
@@ -257,7 +306,7 @@ class AIClient:
                     retry_after = _parse_retry_after(response)
                     wait = retry_after if retry_after else 2 ** attempt
                     logger.info(
-                        "Rate limited (429), waiting %.1fs (attempt %d/%d)",
+                        "触发速率限制 (429), 等待 %.1fs (第 %d/%d 次尝试)",
                         wait,
                         attempt + 1,
                         self._config.max_retries,
@@ -269,7 +318,7 @@ class AIClient:
                 if response.status_code >= 500:
                     wait = self._config.retry_base_delay * (2 ** attempt)
                     logger.warning(
-                        "Server error %d, retrying in %.1fs (attempt %d/%d)",
+                        "服务器错误 %d, %.1fs 后重试 (第 %d/%d 次尝试)",
                         response.status_code,
                         wait,
                         attempt + 1,
@@ -298,8 +347,8 @@ class AIClient:
                 finish_reason = choice.get("finish_reason", "unknown")
                 if finish_reason == "length":
                     logger.warning(
-                        "API response truncated (finish_reason=length) — "
-                        "some translations may be missing"
+                        "API 响应被截断 (finish_reason=length) — "
+                        "部分翻译可能丢失"
                     )
 
                 return content, usage
@@ -307,7 +356,7 @@ class AIClient:
             except (httpx.TimeoutException, httpx.ConnectError) as e:
                 wait = self._config.retry_base_delay * (2 ** attempt)
                 logger.warning(
-                    "Network error: %s, retrying in %.1fs (attempt %d/%d)",
+                    "网络错误: %s, %.1fs 后重试 (第 %d/%d 次尝试)",
                     e,
                     wait,
                     attempt + 1,
@@ -338,7 +387,7 @@ class AIClient:
             AIResponseParseError: If no valid JSON can be extracted.
         """
         if not raw_text or not raw_text.strip():
-            raise AIResponseParseError("Empty response from AI")
+            raise AIResponseParseError("AI 返回空响应")
 
         text = raw_text.strip()
 
@@ -386,7 +435,7 @@ class AIClient:
                     pass
 
         raise AIResponseParseError(
-            f"Could not parse AI response as JSON. Errors: {'; '.join(errors)}"
+            f"无法将 AI 响应解析为 JSON。错误: {'; '.join(errors)}"
         )
 
     @staticmethod
@@ -409,16 +458,16 @@ class AIClient:
         extra = found_keys - expected_keys
 
         if missing:
-            warnings.append(f"Missing {len(missing)} keys")
+            warnings.append(f"缺失 {len(missing)} 个键")
         if extra:
-            warnings.append(f"Extra (hallucinated) {len(extra)} keys")
+            warnings.append(f"多余 (幻觉) {len(extra)} 个键")
 
         # Check for empty values
         empty_values = [
             k for k, v in translations.items() if not v or not v.strip()
         ]
         if empty_values:
-            warnings.append(f"{len(empty_values)} empty translation values")
+            warnings.append(f"{len(empty_values)} 个翻译值为空")
 
         return warnings
 

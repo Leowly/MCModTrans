@@ -83,7 +83,7 @@ def inspect_jar(jar_path: Path) -> dict[str, Any]:
 def print_inspection(result: dict[str, Any]) -> None:
     """Print a detailed inspection report to the console."""
     if not result.get("parseable"):
-        print(f"\n  ERROR: {result.get('error', 'Unknown error')}\n")
+        print(f"\n  错误: {result.get('error', '未知错误')}\n")
         return
 
     meta = result["metadata"]
@@ -91,26 +91,26 @@ def print_inspection(result: dict[str, Any]) -> None:
 
     print()
     print("=" * 68)
-    print(f"  JAR Inspection: {result['jar']}")
+    print(f"  JAR 详细信息: {result['jar']}")
     print("=" * 68)
-    print(f"  Size:         {result['jar_size_mb']} MB")
+    print(f"  文件大小:     {result['jar_size_mb']} MB")
     print(f"  Mod ID:       {result['modid']}")
-    print(f"  Format:       {result['game_version_format']}")
-    print(f"  Encoding:     {result['source_encoding']}")
-    print(f"  Name:         {meta['name'] or '-'}")
-    print(f"  Author:       {meta['author'] or '-'}")
-    print(f"  MC Version:   {meta['game_version'] or '-'}")
+    print(f"  格式:         {result['game_version_format']}")
+    print(f"  编码:         {result['source_encoding']}")
+    print(f"  名称:         {meta['name'] or '-'}")
+    print(f"  作者:         {meta['author'] or '-'}")
+    print(f"  MC 版本:      {meta['game_version'] or '-'}")
     print("-" * 68)
-    print(f"  EN entries:   {stats['total_en_entries']}")
-    print(f"  ZH entries:   {stats['total_zh_entries']}")
-    print(f"  Translated:   {stats['properly_translated']}")
-    print(f"  English in ZH:{stats['english_remaining_in_zh']}")
-    print(f"  ZH-only keys: {stats['zh_only_keys']}")
+    print(f"  英文条目:     {stats['total_en_entries']}")
+    print(f"  中文条目:     {stats['total_zh_entries']}")
+    print(f"  已翻译:       {stats['properly_translated']}")
+    print(f"  中文残留英文: {stats['english_remaining_in_zh']}")
+    print(f"  仅中文键:     {stats['zh_only_keys']}")
     print("-" * 68)
 
     # Show English remaining in zh_cn
     if result.get("english_remaining_samples"):
-        print("\n  English text still in zh_cn (first 10):")
+        print("\n  zh_cn 中残留的英文文本 (前10条):")
         for item in result["english_remaining_samples"]:
             print(f"    {item['key']}")
             print(f"      → \"{item['en_value'][:120]}\"")
@@ -118,14 +118,14 @@ def print_inspection(result: dict[str, Any]) -> None:
 
     # Show sample en entries
     if result.get("sample_en_entries"):
-        print("  Sample en_us entries:")
+        print("  en_us 条目示例:")
         for key, value in list(result["sample_en_entries"].items())[:10]:
             print(f"    {key} = {value[:100]}")
         print()
 
     # Show zh-only keys (keys in zh_cn but not en_us)
     if result.get("zh_only_samples"):
-        print("  Keys in zh_cn but NOT in en_us (may be obsolete):")
+        print("  zh_cn 中有但 en_us 中不存在的键 (可能已废弃):")
         for item in result["zh_only_samples"]:
             print(f"    {item['key']} = {item['zh_value'][:100]}")
         print()

@@ -11,3 +11,9 @@ wheels/
 
 # Config with API key — never commit
 modtrans.toml
+
+# Output from modtrans
+modtrans_output/
+
+# cache files
+.cache/

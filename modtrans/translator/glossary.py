@@ -158,11 +158,11 @@ class Glossary:
                             new_entries[key] = value
         else:
             raise ValueError(
-                f"Unsupported glossary format: {suffix}. Use .json, .csv, or .tsv"
+                f"不支持的术语表格式: {suffix}。请使用 .json、.csv 或 .tsv"
             )
 
         self._entries.update(new_entries)
-        logger.info("Loaded %d glossary entries from %s", len(new_entries), path)
+        logger.info("已从 %s 加载 %d 条术语", path, len(new_entries))
         return len(new_entries)
 
     def get(self, english: str) -> Optional[str]:

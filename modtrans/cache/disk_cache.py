@@ -87,7 +87,7 @@ class DiskCache:
     @property
     def conn(self) -> sqlite3.Connection:
         if self._conn is None:
-            raise RuntimeError("DiskCache not opened. Use context manager or call .open()")
+            raise RuntimeError("DiskCache 未打开。请使用上下文管理器或调用 .open()")
         return self._conn
 
     # ------------------------------------------------------------------
@@ -113,7 +113,7 @@ class DiskCache:
 
         schema_version, json_str = row
         if schema_version != _SCHEMA_VERSION:
-            logger.debug("Cache schema mismatch for %s, invalidating", jar_hash)
+            logger.debug("缓存结构版本不匹配 %s, 作废旧缓存", jar_hash)
             self.conn.execute(
                 "DELETE FROM parsed_jars WHERE jar_hash = ?", (jar_hash,)
             )
@@ -123,7 +123,7 @@ class DiskCache:
         try:
             return _deserialize_mod_assets(json.loads(json_str))
         except (json.JSONDecodeError, KeyError, TypeError) as e:
-            logger.warning("Corrupt cache entry for %s: %s", jar_hash, e)
+            logger.warning("缓存条目损坏 %s: %s", jar_hash, e)
             return None
 
     def put(self, jar_hash: str, mod_assets: ModAssets) -> None:

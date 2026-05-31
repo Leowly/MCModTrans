@@ -10,7 +10,7 @@ T = TypeVar("T")
 
 def create_progress(
     items: list[T],
-    desc: str = "Processing",
+    desc: str = "处理中",
     unit: str = "it",
     disable: bool = False,
 ) -> Iterator[T]:

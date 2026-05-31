@@ -28,7 +28,7 @@ def analyze_mods(mods_dir: Path) -> dict[str, Any]:
     """
     jar_paths = sorted(mods_dir.glob("*.jar"))
     if not jar_paths:
-        logger.warning("No JAR files found in %s", mods_dir)
+        logger.warning("未找到 JAR 文件: %s", mods_dir)
         return {"total_jars": 0, "mods": []}
 
     parser = JarParser()
@@ -81,7 +81,7 @@ def analyze_mods(mods_dir: Path) -> dict[str, Any]:
                 "encoding": assets.source_encoding,
             })
         except JarParseError as e:
-            logger.warning("Skipping %s: %s", jar_path.name, e)
+            logger.warning("跳过 %s: %s", jar_path.name, e)
             failed_count += 1
             mods.append({
                 "jar": jar_path.name,
@@ -89,12 +89,12 @@ def analyze_mods(mods_dir: Path) -> dict[str, Any]:
                 "name": "-",
                 "author": "-",
                 "game_version": "-",
-                "format": "FAILED",
+                "format": "no lang",
                 "en_keys": 0,
                 "zh_keys": 0,
-                "zh_coverage_pct": 0,
-                "zh_missing": 0,
-                "english_in_zh": 0,
+                "zh_coverage_pct": "-",
+                "zh_missing": "-",
+                "english_in_zh": "-",
                 "encoding": "-",
                 "error": str(e),
             })
@@ -102,7 +102,7 @@ def analyze_mods(mods_dir: Path) -> dict[str, Any]:
     return {
         "total_jars": len(jar_paths),
         "parsed": len(jar_paths) - failed_count,
-        "failed": failed_count,
+        "no_lang": failed_count,
         "legacy_format": legacy_count,
         "modern_format": modern_count,
         "unknown_format": unknown_count,
@@ -117,54 +117,62 @@ def analyze_mods(mods_dir: Path) -> dict[str, Any]:
     }
 
 
+def _fmt(val: Any, suffix: str = "") -> str:
+    """Format a table cell value, returning '-' for non-numeric placeholders."""
+    if isinstance(val, (int, float)):
+        return f"{val}{suffix}"
+    return f"{val}"
+
+
 def print_analysis(report: dict[str, Any]) -> None:
     """Print an analysis report to the console in a readable format."""
     print()
     print("=" * 72)
-    print("  MC Mod Translation Analysis")
+    print("  MC Mod 翻译分析报告")
     print("=" * 72)
-    print(f"  Total JARs:    {report['total_jars']:>4}")
-    print(f"  Parsed OK:     {report['parsed']:>4}")
-    print(f"  Failed:        {report['failed']:>4}")
-    print(f"  Legacy (.lang): {report['legacy_format']:>4}")
-    print(f"  Modern (.json): {report['modern_format']:>4}")
-    print(f"  Total EN keys:  {report['total_en_keys']:>6}")
-    print(f"  Total ZH keys:  {report['total_zh_keys']:>6}")
-    print(f"  ZH Coverage:    {report['overall_zh_coverage_pct']:>5.1f}%")
+    print(f"  JAR 总数:       {report['total_jars']:>4}")
+    print(f"  含有语言文件:   {report['parsed']:>4}")
+    print(f"  无语言文件:     {report['no_lang']:>4}  (工具库/前置模组，无需翻译)")
+    print(f"  旧版 (.lang):   {report['legacy_format']:>4}")
+    print(f"  新版 (.json):   {report['modern_format']:>4}")
+    print(f"  英文条目总数:   {report['total_en_keys']:>6}")
+    print(f"  中文条目总数:   {report['total_zh_keys']:>6}")
+    print(f"  汉化覆盖率:     {report['overall_zh_coverage_pct']:>5.1f}%")
     print("-" * 72)
-    print(f"  {'Mod':<40} {'EN':>5} {'ZH':>5} {'Cover%':>7} {'Miss':>5} {'EngInZH':>7}")
+    print(f"  {'Mod':<40} {'英文':>5} {'中文':>5} {'覆盖%':>7} {'缺失':>5} {'英在中':>7}")
     print("-" * 72)
 
     for mod in report["mods"]:
         name = mod["jar"][:38] + (".." if len(mod["jar"]) > 40 else "")
-        print(
-            f"  {name:<40} "
-            f"{mod['en_keys']:>5} "
-            f"{mod['zh_keys']:>5} "
-            f"{mod['zh_coverage_pct']:>6.1f}% "
-            f"{mod['zh_missing']:>5} "
-            f"{mod['english_in_zh']:>7}"
-        )
+        en = _fmt(mod["en_keys"])
+        zh = _fmt(mod["zh_keys"])
+        cov = _fmt(mod["zh_coverage_pct"], suffix="%") if isinstance(mod["zh_coverage_pct"], (int, float)) else "      -"
+        miss = _fmt(mod["zh_missing"])
+        eng_in = _fmt(mod["english_in_zh"])
+        print(f"  {name:<40} {en:>5} {zh:>5} {cov:>7} {miss:>5} {eng_in:>7}")
 
     print("-" * 72)
-    print(f"  {'TOTAL':<40} {report['total_en_keys']:>5} {report['total_zh_keys']:>5}")
+    print(f"  {'合计':<40} {report['total_en_keys']:>5} {report['total_zh_keys']:>5}")
     print("=" * 72)
     print()
 
-    # Show mods needing full translation
-    untranslated = [m for m in report["mods"] if m["zh_coverage_pct"] == 0]
+    # Show mods needing full translation (only those with actual text)
+    untranslated = [
+        m for m in report["mods"]
+        if m["zh_coverage_pct"] == 0 and m["en_keys"] > 0
+    ]
     if untranslated:
-        print(f"  Mods with NO Chinese translation ({len(untranslated)}):")
+        print(f"  完全没有汉化的 Mod ({len(untranslated)}):")
         for m in untranslated:
-            print(f"    - {m['jar']}  ({m['en_keys']} keys)")
+            print(f"    - {m['jar']}  ({m['en_keys']} 条)")
         print()
 
     # Show mods with English left in zh_cn
-    eng_in_zh = [m for m in report["mods"] if m["english_in_zh"] > 0]
+    eng_in_zh = [m for m in report["mods"] if isinstance(m["english_in_zh"], int) and m["english_in_zh"] > 0]
     if eng_in_zh:
-        print(f"  Mods with English text still in zh_cn ({len(eng_in_zh)}):")
+        print(f"  zh_cn 中残留英文的 Mod ({len(eng_in_zh)}):")
         for m in eng_in_zh:
             print(
-                f"    - {m['jar']}  ({m['english_in_zh']} entries are still English)"
+                f"    - {m['jar']}  ({m['english_in_zh']} 条仍为英文)"
             )
         print()

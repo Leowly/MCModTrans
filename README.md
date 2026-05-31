@@ -6,50 +6,56 @@
 
 ## 快速开始
 
-```bash
+```powershell
+# 1. 安装依赖
 uv sync
-modtrans init-config
+
+# 2. 生成配置文件
+uv run modtrans init-config
+
+# 3. 编辑 modtrans.toml，填入 API 密钥
+notepad modtrans.toml
 ```
 
-编辑 `modtrans.toml`，填入你的 API 密钥：
+## 使用
+
+```powershell
+# 运行命令前，先激活虚拟环境（每次新终端只需一次）
+.venv\Scripts\activate
+
+# 分析整合包的翻译覆盖率（会弹出文件夹选择器）
+modtrans analyze
+
+# 也可以用 -m 直接指定路径（支持整合包根目录或 mods 文件夹，自动识别）
+modtrans analyze -m "D:\path\to\modpack"
+
+# 深入了解某个 Mod
+modtrans inspect "D:\path\to\mod.jar"
+
+# 完整翻译
+modtrans translate
+
+# 先试运行看效果（不调用 AI，仅解析）
+modtrans translate --dry-run
+```
+
+如果不想每次激活虚拟环境，用 `uv run` 前缀：
+
+```powershell
+uv run modtrans analyze
+uv run modtrans translate
+```
+
+## 配置文件 `modtrans.toml`
 
 ```toml
 [ai]
-api_key = "sk-your-api-key-here"
+api_base = "https://api.openai.com/v1"   # 第三方 API 改这里
+api_key = "sk-your-key-here"             # 直接填密钥
+model = "gpt-4o"                          # 模型名
 ```
 
-然后运行：
-
-```bash
-modtrans analyze -m /path/to/mods
-modtrans translate -m /path/to/mods -o ./chinese_pack
-```
-
-## 命令参考
-
-| 命令 | 说明 |
-|------|------|
-| `modtrans translate` | 完整流水线：解析 → 翻译 → 打包 |
-| `modtrans analyze` | 分析 Mod 翻译覆盖率 |
-| `modtrans inspect <jar>` | 深入查看单个 JAR |
-| `modtrans find-untagged` | 查找缺少英文名的物品 |
-| `modtrans cache --clear` | 清除解析缓存 |
-
-## 配置文件
-
-只有这几个字段需要关心，其余都有合理默认值：
-
-```toml
-[general]
-mods_dir = "./mods"          # 整合包 mods 目录
-output_dir = "./output_resource_pack"
-game_version = "auto"        # auto / legacy / modern
-
-[ai]
-api_base = "https://api.openai.com/v1"
-api_key = "sk-your-key-here"  # 直接写密钥
-model = "gpt-4o"
-```
+`modtrans.toml` 已加入 `.gitignore`，不会被提交到 Git。
 
 ## 工作流程
 
@@ -63,17 +69,17 @@ mods/*.jar → 解析语言文件 → 按作者分批 → AI 翻译 → 输出�
 
 ## 输出
 
-放入 `resourcepacks/` 即可使用：
-
 ```
-output_resource_pack/
+modtrans_output/
 ├── pack.mcmeta
 └── assets/<modid>/lang/
     ├── zh_cn.lang   (1.12.2-)
     └── zh_cn.json   (1.13+)
 ```
 
-## 第三方 API
+将 `modtrans_output/` 复制到 Minecraft 的 `resourcepacks/` 文件夹即可使用。
+
+## 第三方 API 示例
 
 **DeepSeek：**
 ```toml
