@@ -13,6 +13,10 @@ import logging
 
 logger = logging.getLogger(__name__)
 
+# Track which mods have already been logged (to avoid duplicate messages)
+# _untranslated_keys() is called multiple times per mod during batching.
+_logged_compat: set[str] = set()
+
 # ---------------------------------------------------------------------------
 # Known-bug patterns: keys that must stay in English
 # ---------------------------------------------------------------------------
@@ -77,7 +81,8 @@ def filter_compat_keys(modid: str, keys: set[str]) -> tuple[set[str], set[str]]:
         else:
             translate.add(key)
 
-    if keep:
+    if keep and modid not in _logged_compat:
+        _logged_compat.add(modid)
         logger.info(
             "%s: 跳过 %d 个键（%s）",
             modid, len(keep), reason,
