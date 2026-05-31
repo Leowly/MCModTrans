@@ -123,15 +123,34 @@ class AIClient:
 
         expected_keys = set(all_entries.keys())
 
-        # 缺失的 key — 记录到 missed_entries，不在此处补译
+        # 缺失的 key — key 不在 AI 响应中
         missing_keys = expected_keys - set(translations.keys())
         missed_entries = {
             k: all_entries[k] for k in missing_keys if k in all_entries
         }
+
+        # 空值 key — 英文原文有内容但 AI 返回空值，视同缺失，纳入补译
+        # 注意：英文原文本身就是空的（如占位 tooltip）不算异常
+        empty_keys = {
+            k for k, v in translations.items()
+            if k in expected_keys
+            and (not v or not v.strip())
+            and all_entries.get(k, "").strip()
+        }
+        if empty_keys:
+            for k in empty_keys:
+                missed_entries[k] = all_entries[k]
+                del translations[k]
+            logger.info(
+                "批次 %s: %d 个翻译值为空，纳入集中补译",
+                batch.batch_id, len(empty_keys),
+            )
+
         if missed_entries:
+            missing_count = len(missing_keys) + len(empty_keys)
             logger.info(
                 "批次 %s: %d 个键未返回，纳入集中补译",
-                batch.batch_id, len(missed_entries),
+                batch.batch_id, missing_count,
             )
 
         # 校验（仅日志）

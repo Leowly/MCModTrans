@@ -416,11 +416,26 @@ def translate(
                 # 记忆库查重
                 tm_hits = tm.lookup_batch(batch.entries)
                 if tm_hits:
-                    logger.info(
-                        "批次 %s: 记忆库命中 %d/%d 条",
-                        batch.batch_id, len(tm_hits), len(batch.entries),
-                    )
                     all_tm_hits.update(tm_hits)
+
+                # 全部命中记忆库 — 跳过 AI 调用
+                if len(tm_hits) == len(batch.entries):
+                    all_translations.update(tm_hits)
+                    logger.info(
+                        "批次 %s: 记忆库全命中 %d 条，跳过 AI",
+                        batch.batch_id, len(tm_hits),
+                    )
+                    click.echo(
+                        f"\r  [{batch_idx}/{total_batches}] {batch.batch_id} "
+                        f"(全记忆库命中 {len(tm_hits)} 条) ✓"
+                    )
+                    continue
+
+                if tm_hits:
+                    click.echo(
+                        f"\r  [{batch_idx}/{total_batches}] {batch.batch_id} "
+                        f"(记忆库 {len(tm_hits)}/{len(batch.entries)})"
+                    )
 
                 result = await ai_client.translate_batch(batch)
                 report.api_calls += 1
