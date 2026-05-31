@@ -30,6 +30,7 @@ class GeneralConfig:
     cache_dir: Path = Path("./.cache/modtrans")
     game_version: str = "auto"
     log_level: str = "INFO"
+    enable_i18n: bool = True
 
 
 @dataclass
@@ -42,7 +43,7 @@ class AIConfig:
     max_retries: int = 3
     retry_base_delay: float = 2.0
     requests_per_minute: int = 50
-    max_keys_per_call: int = 1000
+    max_keys_per_call: int = 100
 
 
 @dataclass
@@ -105,6 +106,7 @@ def _dict_to_config(data: dict[str, Any]) -> AppConfig:
             cache_dir=Path(g.get("cache_dir", config.general.cache_dir)),
             game_version=g.get("game_version", config.general.game_version),
             log_level=g.get("log_level", config.general.log_level),
+            enable_i18n=bool(g.get("enable_i18n", config.general.enable_i18n)),
         )
 
     if "ai" in data:

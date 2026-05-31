@@ -65,6 +65,8 @@ class ResourcePack:
         self,
         translated_mods: list[ModAssets],
         output_dir: Path,
+        *,
+        mc_version: str = "",
     ) -> Path:
         """将资源包写入 output_dir。
 
@@ -134,7 +136,10 @@ class ResourcePack:
             self._write_merged(work_dir, translated_mods, pack_format)
 
             # 打包 ZIP
-            zip_name = f"ModTrans-汉化资源包-{pack_format}.zip"
+            if mc_version:
+                zip_name = f"ModTrans-汉化资源包-MC{mc_version}.zip"
+            else:
+                zip_name = f"ModTrans-汉化资源包-pack{pack_format}.zip"
             zip_path = output_dir / zip_name
 
             with zipfile.ZipFile(zip_path, "w", zipfile.ZIP_DEFLATED) as zf:

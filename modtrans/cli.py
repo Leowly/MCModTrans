@@ -290,42 +290,65 @@ def translate(
         return
 
     # --- 补充 i18n 数据 ---
-    click.echo("\n--- 加载 i18n 汉化数据 ---")
-    from .translator.i18n_reader import I18nReader
-    i18n_reader = I18nReader()
-    # 优先用整合包检测到的版本，其次从 mod 元数据推断
-    best_version = None
-    if mc_version:
-        best_version = i18n_reader.find_best_version(mc_version)
-    if not best_version:
-        mc_versions = {
-            m.metadata.game_version for m in all_mod_assets
-            if m.metadata.game_version
-        }
-        if mc_versions:
-            from collections import Counter
-            version_counts = Counter(mc_versions)
-            most_common = version_counts.most_common(1)[0][0]
-            best_version = i18n_reader.find_best_version(most_common)
-    if best_version:
-        i18n_data = i18n_reader.read_version(best_version)
-        i18n_matched = 0
-        i18n_keys_added = 0
-        for mod in all_mod_assets:
-            if mod.modid in i18n_data:
-                i18n_entries = i18n_data[mod.modid]
-                # 将 i18n 汉化合并到 existing_chinese（不覆盖已有的）
-                for k, v in i18n_entries.items():
-                    if k not in mod.existing_chinese and k in mod.english_entries:
-                        mod.existing_chinese[k] = v
-                        i18n_keys_added += 1
-                i18n_matched += 1
-        click.echo(
-            f"i18n {best_version}: 匹配 {i18n_matched} 个 mod，"
-            f"补充 {i18n_keys_added} 条汉化参考"
-        )
-    else:
-        click.echo("未找到匹配的 i18n 数据")
+    if cfg.general.enable_i18n:
+        click.echo("\n--- 加载 i18n 汉化数据 ---")
+        from .translator.i18n_reader import I18nReader
+        i18n_reader = I18nReader()
+        # 优先用整合包检测到的版本，其次从 mod 元数据推断
+        best_version = None
+        if mc_version:
+            best_version = i18n_reader.find_best_version(mc_version)
+        if not best_version:
+            mc_versions = {
+                m.metadata.game_version for m in all_mod_assets
+                if m.metadata.game_version
+            }
+            if mc_versions:
+                from collections import Counter
+                version_counts = Counter(mc_versions)
+                most_common = version_counts.most_common(1)[0][0]
+                best_version = i18n_reader.find_best_version(most_common)
+        if best_version:
+            i18n_data = i18n_reader.read_version(best_version)
+            i18n_matched = 0
+            i18n_keys_added = 0
+            for mod in all_mod_assets:
+                if mod.modid in i18n_data:
+                    i18n_entries = i18n_data[mod.modid]
+                    # 将 i18n 汉化合并到 existing_chinese（不覆盖已有的）
+                    for k, v in i18n_entries.items():
+                        if k not in mod.existing_chinese and k in mod.english_entries:
+                            mod.existing_chinese[k] = v
+                            i18n_keys_added += 1
+                    i18n_matched += 1
+            click.echo(
+                f"i18n {best_version}: 匹配 {i18n_matched} 个 mod，"
+                f"补充 {i18n_keys_added} 条汉化参考"
+            )
+        else:
+            click.echo("未找到匹配的 i18n 数据")
+
+    # --- 兼容性过滤：清除已知会触发 mod bug 的 existing_chinese ---
+    from .compat import SKIP_TRANSLATION_PATTERNS
+    compat_removed_total = 0
+    for mod in all_mod_assets:
+        entry = SKIP_TRANSLATION_PATTERNS.get(mod.modid)
+        if entry is None:
+            continue
+        prefixes, reason = entry
+        removed = 0
+        for key in list(mod.existing_chinese.keys()):
+            if any(key.startswith(p) for p in prefixes):
+                del mod.existing_chinese[key]
+                removed += 1
+        if removed:
+            logger.info(
+                "%s: 从 existing_chinese 移除 %d 个兼容性键（%s）",
+                mod.modid, removed, reason,
+            )
+            compat_removed_total += removed
+    if compat_removed_total:
+        click.echo(f"兼容性过滤: 移除 {compat_removed_total} 条可能触发 mod bug 的汉化")
 
     # --- 加载翻译记忆库 ---
     from .translator.translation_memory import TranslationMemory
@@ -359,7 +382,7 @@ def translate(
     if not batches:
         click.echo("所有条目已完成翻译 — 无需调用 AI！")
         cfg.general.output_dir = output_path
-        _package_output(all_mod_assets, cfg, report, total_start)
+        _package_output(all_mod_assets, cfg, report, total_start, mc_version)
         return
 
     click.echo(f"共 {len(batches)} 个批次, {sum(b.total_keys for b in batches)} 条待翻译")
@@ -525,7 +548,7 @@ def translate(
 
     # --- Stage 4: Package ---
     cfg.general.output_dir = output_path
-    _package_output(all_mod_assets, cfg, report, total_start)
+    _package_output(all_mod_assets, cfg, report, total_start, mc_version)
 
 
 # ======================================================================
@@ -705,6 +728,7 @@ def _package_output(
     cfg: AppConfig,
     report: "PipelineReport",
     total_start: float,
+    mc_version: str = "",
 ) -> None:
     from .packager.resource_pack import ResourcePack
     click.echo("\n=== 第4步: 打包输出 ===")
@@ -719,7 +743,7 @@ def _package_output(
         description=cfg.packager.pack_description,
         pack_format=pack_format,
     )
-    output = pack.write(mods, cfg.general.output_dir)
+    output = pack.write(mods, cfg.general.output_dir, mc_version=mc_version)
     report.duration_seconds = time.monotonic() - total_start
     click.echo()
     click.echo("=" * 50)

@@ -185,7 +185,10 @@ class Batcher:
         """Return English keys that still need translation.
 
         Keys already having a valid (non-English) zh_cn are excluded.
+        Keys matching known compatibility bug patterns are also excluded.
         """
+        from ..compat import filter_compat_keys
+
         all_keys = set(mod.english_entries.keys())
         already_translated: set[str] = set()
 
@@ -194,4 +197,9 @@ class Batcher:
             if en_value is not None and zh_value.strip() != en_value.strip():
                 already_translated.add(key)
 
-        return all_keys - already_translated
+        untranslated = all_keys - already_translated
+
+        # 兼容性过滤：排除已知会触发 mod bug 的键
+        untranslated, _kept_english = filter_compat_keys(mod.modid, untranslated)
+
+        return untranslated

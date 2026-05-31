@@ -6,6 +6,7 @@ Features:
 - Response parsing with markdown code block extraction
 - Response validation (all keys present, no hallucinations)
 - Graceful degradation: English fallback on total failure
+- Auto-retry on abnormally low response rate (model fluke detection)
 """
 
 from __future__ import annotations
@@ -19,7 +20,7 @@ from typing import Any, Optional
 
 import httpx
 
-from ..models import ModAssets, TranslationBatch, TranslationResult
+from ..models import TranslationBatch, TranslationResult
 from .prompt import (
     SYSTEM_PROMPT,
     build_user_message,
@@ -34,6 +35,10 @@ class AIResponseParseError(Exception):
 
 class AIResponseValidationError(Exception):
     """AI response is valid JSON but doesn't match expected keys."""
+
+
+# Threshold: retry if AI returns fewer than this fraction of expected keys
+_MIN_RESPONSE_RATIO = 0.3
 
 
 class AIClient:
@@ -83,9 +88,7 @@ class AIClient:
     # Public API
     # ------------------------------------------------------------------
 
-    async def translate_batch(
-        self, batch: TranslationBatch
-    ) -> TranslationResult:
+    async def translate_batch(self, batch: TranslationBatch) -> TranslationResult:
         """Translate a batch of mod entries.
 
         Args:
@@ -94,54 +97,30 @@ class AIClient:
         Returns:
             TranslationResult with translated entries and usage metadata.
         """
-        # 本批次要翻译的 key（由 Batcher 预筛，已排除已有汉化）
         all_entries = dict(batch.entries)
 
-        # 已有正确翻译（来自 batcher，供 AI 参考风格）
-        fully_translated = dict(batch.existing_reference)
-
-        # keys_to_review：zh_cn 有该 key 但值仍是英文（可能是专有名词）
-        keys_to_review: set[str] = set()
-        for mod in batch.mods:
-            for k in all_entries:
-                zh_val = mod.existing_chinese.get(k)
-                if zh_val is not None:
-                    en_val = mod.english_entries.get(k, "")
-                    if zh_val.strip() == en_val.strip():
-                        keys_to_review.add(k)
-
-        # Build the user message
         user_message = build_user_message(
             all_entries,
             mod_context=batch.context_info,
-            existing_chinese=fully_translated,
-            keep_english_keys=keys_to_review if keys_to_review else None,
         )
 
-        # Call the API
-        try:
-            response_text, usage = await self._call_api(
-                system_prompt=SYSTEM_PROMPT,
-                user_message=user_message,
-            )
-        except Exception as e:
-            logger.error("批次 %s API 调用失败: %s", batch.batch_id, e)
+        # Call + parse（异常低回复率自动重试一次）
+        translations, usage = await self._call_and_parse(
+            SYSTEM_PROMPT, user_message,
+            expected=len(all_entries),
+            batch_id=batch.batch_id,
+        )
+
+        if translations is None:
+            logger.error("批次 %s API 调用完全失败", batch.batch_id)
             return TranslationResult(
                 batch=batch,
                 translations={},
                 model=self._config.model,
                 success=False,
-                error=str(e),
+                error="API 调用或解析失败",
             )
 
-        # 解析并校验
-        try:
-            translations = await self._parse_response(response_text)
-        except AIResponseParseError:
-            logger.warning("批次 %s JSON 解析失败，将纳入补译", batch.batch_id)
-            translations = {}
-
-        # 期望的 key 集合 = 本批次的 key
         expected_keys = set(all_entries.keys())
 
         # 缺失的 key — 记录到 missed_entries，不在此处补译
@@ -190,8 +169,10 @@ class AIClient:
             key → Chinese text dictionary.
         """
         user_message = build_user_message(entries, mod_context=context)
-        response_text, _ = await self._call_api(SYSTEM_PROMPT, user_message)
-        return await self._parse_response(response_text)
+        translations, _ = await self._call_and_parse(
+            SYSTEM_PROMPT, user_message, expected=len(entries),
+        )
+        return translations if translations is not None else {}
 
     async def translate_missing(
         self,
@@ -212,15 +193,12 @@ class AIClient:
         user_message = build_user_message(
             entries, mod_context=context or "集中补译",
         )
-        response_text, usage = await self._call_api(
-            system_prompt=SYSTEM_PROMPT,
-            user_message=user_message,
+        translations, usage = await self._call_and_parse(
+            SYSTEM_PROMPT, user_message, expected=len(entries),
         )
-        try:
-            translations = await self._parse_response(response_text)
-        except AIResponseParseError:
-            logger.warning("补译 JSON 解析失败 (%d 键)", len(entries))
+        if translations is None:
             translations = {}
+            usage = {}
 
         # Fill missing with English fallback
         expected = set(entries.keys())
@@ -232,6 +210,69 @@ class AIClient:
             )
             for k in still_missing:
                 translations[k] = entries[k]
+
+        return translations, usage
+
+    # ------------------------------------------------------------------
+    # Internal: call + parse (with low-response retry)
+    # ------------------------------------------------------------------
+
+    async def _call_and_parse(
+        self,
+        system_prompt: str,
+        user_message: str,
+        *,
+        expected: int = 0,
+        batch_id: str = "",
+    ) -> tuple[Optional[dict[str, str]], dict]:
+        """Call API and parse response. Retries once if response is abnormally short.
+
+        Args:
+            system_prompt: Frozen system prompt.
+            user_message: Dynamic user message with entries to translate.
+            expected: Expected number of keys (for low-response detection).
+            batch_id: Human-readable batch ID for logging.
+
+        Returns:
+            (translations dict or None on total failure, usage dict).
+        """
+        try:
+            response_text, usage = await self._call_api(system_prompt, user_message)
+        except Exception as e:
+            logger.error("%sAPI 调用失败: %s", f"批次 {batch_id}: " if batch_id else "", e)
+            return None, {}
+
+        try:
+            translations = await self._parse_response(response_text)
+        except AIResponseParseError:
+            logger.warning("%sJSON 解析失败", f"批次 {batch_id}: " if batch_id else "")
+            translations = {}
+
+        # Detect abnormally low response (model fluke) and retry once
+        if expected >= 10 and translations:
+            got = len(translations)
+            if got < expected * _MIN_RESPONSE_RATIO:
+                logger.warning(
+                    "批次 %s: AI 仅返回 %d/%d 键 (%.0f%%)，疑似模型波动，重试一次",
+                    batch_id, got, expected, got / expected * 100,
+                )
+                try:
+                    response_text2, usage2 = await self._call_api(
+                        system_prompt, user_message,
+                    )
+                    usage = _merge_usage(usage, usage2)
+                    translations2 = await self._parse_response(response_text2)
+                    if len(translations2) > got:
+                        logger.info(
+                            "批次 %s: 重试成功，获得 %d/%d 键 (%.0f%%)",
+                            batch_id, len(translations2), expected,
+                            len(translations2) / expected * 100,
+                        )
+                        translations = translations2
+                except AIResponseParseError:
+                    logger.debug("批次 %s: 重试 JSON 解析也失败了", batch_id)
+                except Exception:
+                    logger.debug("批次 %s: 重试 API 调用也失败了", batch_id)
 
         return translations, usage
 
@@ -287,7 +328,7 @@ class AIClient:
                 # Handle rate limiting
                 if response.status_code == 429:
                     retry_after = _parse_retry_after(response)
-                    wait = retry_after if retry_after else 2 ** attempt
+                    wait = retry_after if retry_after else 2**attempt
                     logger.info(
                         "触发速率限制 (429), 等待 %.1fs (第 %d/%d 次尝试)",
                         wait,
@@ -299,7 +340,7 @@ class AIClient:
 
                 # Handle server errors
                 if response.status_code >= 500:
-                    wait = self._config.retry_base_delay * (2 ** attempt)
+                    wait = self._config.retry_base_delay * (2**attempt)
                     logger.warning(
                         "服务器错误 %d, %.1fs 后重试 (第 %d/%d 次尝试)",
                         response.status_code,
@@ -343,7 +384,7 @@ class AIClient:
                 return content, usage
 
             except (httpx.TimeoutException, httpx.ConnectError) as e:
-                wait = self._config.retry_base_delay * (2 ** attempt)
+                wait = self._config.retry_base_delay * (2**attempt)
                 logger.warning(
                     "网络错误: %s, %.1fs 后重试 (第 %d/%d 次尝试)",
                     e,
@@ -388,9 +429,7 @@ class AIClient:
             pass
 
         # 容错：从 markdown 代码块提取（极少发生）
-        md_match = re.search(
-            r"```(?:json)?\s*(\{.*?\})\s*```", text, re.DOTALL
-        )
+        md_match = re.search(r"```(?:json)?\s*(\{.*?\})\s*```", text, re.DOTALL)
         if md_match:
             try:
                 result = json.loads(md_match.group(1))
@@ -480,6 +519,21 @@ def _coerce_values(data: dict) -> dict[str, str]:
             result[k] = str(v)
     return result
 
+
+def _merge_usage(a: dict, b: dict) -> dict:
+    """Merge two API usage dicts by summing token counts."""
+    if not a:
+        return b
+    if not b:
+        return a
+    merged: dict[str, int] = {}
+    for key in ("prompt_tokens", "completion_tokens", "total_tokens"):
+        merged[key] = a.get(key, 0) + b.get(key, 0)
+    # Cache tokens are already included in prompt_tokens
+    for key in ("prompt_cache_hit_tokens", "prompt_cache_miss_tokens"):
+        if key in a or key in b:
+            merged[key] = a.get(key, 0) + b.get(key, 0)
+    return merged
 
 
 def _parse_retry_after(response: httpx.Response) -> Optional[float]:
