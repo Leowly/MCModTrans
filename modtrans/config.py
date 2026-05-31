@@ -1,4 +1,4 @@
-"""TOML configuration loading.
+﻿"""TOML configuration loading.
 
 Config is searched in this order:
 1. Explicit path argument
@@ -31,6 +31,8 @@ class GeneralConfig:
     game_version: str = "auto"
     log_level: str = "INFO"
     enable_i18n: bool = True
+    enable_cross_mod_fill: bool = True
+    enable_untagged_fill: bool = True
 
 
 @dataclass
@@ -107,6 +109,8 @@ def _dict_to_config(data: dict[str, Any]) -> AppConfig:
             game_version=g.get("game_version", config.general.game_version),
             log_level=g.get("log_level", config.general.log_level),
             enable_i18n=bool(g.get("enable_i18n", config.general.enable_i18n)),
+            enable_cross_mod_fill=bool(g.get("enable_cross_mod_fill", config.general.enable_cross_mod_fill)),
+            enable_untagged_fill=bool(g.get("enable_untagged_fill", config.general.enable_untagged_fill)),
         )
 
     if "ai" in data:

@@ -1,4 +1,4 @@
-"""Command-line interface for Minecraft Mod Translation Tool."""
+﻿"""Command-line interface for Minecraft Mod Translation Tool."""
 
 from __future__ import annotations
 
@@ -349,6 +349,31 @@ def translate(
             compat_removed_total += removed
     if compat_removed_total:
         click.echo(f"兼容性过滤: 移除 {compat_removed_total} 条可能触发 mod bug 的汉化")
+
+    # --- 跨模组缺失键检测 ---
+    cross_mod_added = 0
+    if cfg.general.enable_cross_mod_fill:
+        click.echo("\n--- 检测跨模组缺失翻译键 ---")
+        from .analyzer.cross_mod import analyze_and_apply
+        cross_mod_added = analyze_and_apply(all_mod_assets)
+        if cross_mod_added:
+            click.echo(f"检测并补充 {cross_mod_added} 条缺失的跨模组条目")
+            report.total_keys += cross_mod_added
+        else:
+            click.echo("未检测到缺失的跨模组条目")
+
+    
+    # --- 模型文件未命名物品补充 ---
+    untagged_added = 0
+    if cfg.general.enable_untagged_fill:
+        click.echo("\n--- 检测模型文件未命名物品 ---")
+        from .analyzer.untagged_filler import find_and_apply
+        untagged_added = find_and_apply(all_mod_assets)
+        if untagged_added:
+            click.echo(f"从模型文件补充 {untagged_added} 个未命名物品/方块")
+            report.total_keys += untagged_added
+        else:
+            click.echo("所有模型物品均有语言条目")
 
     # --- 加载翻译记忆库 ---
     from .translator.translation_memory import TranslationMemory
