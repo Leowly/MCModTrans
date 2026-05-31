@@ -1,0 +1,6 @@
+# ModTrans Configuration
+
+[ai]
+api_base = "https://api.openai.com/v1"
+api_key = "sk-your-api-key-here"
+model = "gpt-4o"

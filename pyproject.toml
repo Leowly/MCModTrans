@@ -1,0 +1,23 @@
+[project]
+name = "modtrans"
+version = "0.1.0"
+description = "Minecraft Mod Chinese Translation Tool"
+readme = "README.md"
+requires-python = ">=3.13"
+dependencies = [
+    "chardet>=5",
+    "click>=8.4.1",
+    "httpx>=0.28.1",
+    "rich>=13",
+    "tqdm>=4.67.3",
+]
+
+[project.scripts]
+modtrans = "modtrans.cli:main"
+
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[tool.hatch.build.targets.wheel]
+packages = ["modtrans"]
