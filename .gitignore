@@ -8,3 +8,6 @@ wheels/
 
 # Virtual environments
 .venv
+
+# Config with API key — never commit
+modtrans.toml
