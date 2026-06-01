@@ -1,4 +1,4 @@
-"""Core JAR parser — extracts language files and metadata from mod JARs.
+﻿"""Core JAR parser — extracts language files and metadata from mod JARs.
 
 Orchestrates the full parsing pipeline:
 1. Open JAR as ZIP
@@ -311,7 +311,24 @@ class JarParser:
             info = json.loads(info_bytes.decode("utf-8-sig"), strict=False)
             # mcmod.info is usually a list of mod objects
             if isinstance(info, list) and len(info) > 0:
-                mod = info[0]
+                # Some mods list their dependencies first in mcmod.info,
+                # so taking info[0] can return the wrong modid.
+                # Instead, prefer the entry with the most complete metadata.
+                _SKIP_MODIDS = {"minecraft", "forge", "mcp", "fml"}
+                best = None
+                for entry in info:
+                    modid = entry.get("modid", "")
+                    if modid in _SKIP_MODIDS:
+                        continue
+                    has_name = bool(entry.get("name"))
+                    has_version = bool(entry.get("version"))
+                    has_author = bool(entry.get("authorList") or entry.get("authors"))
+                    if has_name and has_version and has_author:
+                        best = entry
+                        break
+                    if best is None and has_name and has_version:
+                        best = entry
+                mod = best if best is not None else info[0]
             elif isinstance(info, dict):
                 mod = info
             else:
@@ -486,3 +503,4 @@ def _classify_lang_entries(
             other.append(path)
 
     return en_us, zh_cn, other
+

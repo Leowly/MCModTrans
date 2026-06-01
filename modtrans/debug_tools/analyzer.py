@@ -1,4 +1,4 @@
-"""分析 mods 结构 — 翻译覆盖率、i18n 匹配、未命名物品检测。
+﻿"""分析 mods 结构 — 翻译覆盖率、i18n 匹配、未命名物品检测。
 
 Usage::
 
@@ -10,7 +10,6 @@ from __future__ import annotations
 import logging
 from pathlib import Path
 from typing import Any
-from zipfile import ZipFile
 
 from ..models import GameVersion
 from ..parser.jar_parser import JarParser, JarParseError
@@ -119,7 +118,7 @@ def analyze_mods(mods_dir: Path) -> dict[str, Any]:
 
 
 # ---------------------------------------------------------------------------
-# 新的分析器: i18n 匹配 + 未命名物品检测
+# 增强分析器: i18n 匹配 + 未命名物品检测（委托给 model_scanner）
 # ---------------------------------------------------------------------------
 
 
@@ -130,7 +129,7 @@ def analyze_mods_extended(
     """增强版分析 — 包含 i18n 匹配和未命名物品检测。
 
     加载 i18n 数据 → 按 modid 匹配 → 统计 i18n 命中
-    扫描模型文件 → 比对语言条目 → 报告未命名物品
+    通过 model_scanner 模块检测未命名物品（与 translate/find-untagged 逻辑一致）
     """
     basic = analyze_mods(mods_dir)
 
@@ -157,21 +156,24 @@ def analyze_mods_extended(
         except Exception:
             i18n_version = ""
 
-    # --- 未命名物品检测 ---
-    untagged_mods: list[dict[str, Any]] = []
+    # --- 未命名物品检测（使用共享的 model_scanner，与 translate/find-untagged 一致）---
+    from ..analyzer.model_scanner import scan_jar_direct
+
     for mod in basic["mods"]:
         if mod["format"] == "no lang":
             continue
-        # 用 finder 的逻辑检测
         jar_name = mod["jar"]
         jar_path = mods_dir / jar_name
         if not jar_path.is_file():
             continue
         try:
-            ut = _check_untagged(jar_path, mod.get("modid", ""))
-            if ut:
-                mod["untagged_items"] = ut["untagged_items"]
-                mod["untagged_blocks"] = ut["untagged_blocks"]
+            parser = JarParser()
+            assets = parser.parse_jar(jar_path)
+            from ..analyzer.model_scanner import scan_mod
+            result = scan_mod(assets)
+            if result.has_untagged:
+                mod["untagged_items"] = result.untagged_items
+                mod["untagged_blocks"] = result.untagged_blocks
         except Exception:
             pass
 
@@ -180,79 +182,6 @@ def analyze_mods_extended(
     basic["i18n_keys_total"] = i18n_keys_total
 
     return basic
-
-
-def _check_untagged(jar_path: Path, modid: str) -> dict[str, Any] | None:
-    """检查单个 JAR 中的未命名物品/方块。"""
-    from ..parser.encoding import decode_lang
-    from ..parser.lang_parser import parse_lang
-    from ..parser.json_parser import parse_json
-
-    with ZipFile(jar_path, "r") as zf:
-        names = zf.namelist()
-
-        # 收集模型物品/方块
-        model_items: set[str] = set()
-        model_blocks: set[str] = set()
-        for name in names:
-            if "models/item/" in name and name.endswith(".json"):
-                model_items.add(Path(name).stem)
-            elif "blockstates/" in name and name.endswith(".json"):
-                model_blocks.add(Path(name).stem)
-
-        if not model_items and not model_blocks:
-            return None
-
-        # 解析已有的 en_us 键
-        known_keys: set[str] = set()
-        for name in names:
-            if "/lang/" not in name:
-                continue
-            fn = name.lower()
-            if "en_us" not in fn and "en-us" not in fn:
-                continue
-            try:
-                raw = zf.read(name)
-                if name.endswith(".lang"):
-                    text, _ = decode_lang(raw)
-                    known_keys.update(parse_lang(text).keys())
-                else:
-                    known_keys.update(parse_json(raw).keys())
-            except Exception:
-                pass
-
-        # 检查每个模型物品是否有对应 lang key
-        untagged_items = sorted(
-            i for i in model_items
-            if not _has_lang_key(i, modid, known_keys)
-        )
-        untagged_blocks = sorted(
-            b for b in model_blocks
-            if not _has_lang_key(b, modid, known_keys)
-        )
-
-        if untagged_items or untagged_blocks:
-            return {
-                "untagged_items": untagged_items,
-                "untagged_blocks": untagged_blocks,
-            }
-        return None
-
-
-def _has_lang_key(name: str, modid: str, known_keys: set[str]) -> bool:
-    """检查物品/方块名是否有对应的 lang key。"""
-    candidates = [
-        f"item.{modid}.{name}.name",
-        f"tile.{modid}.{name}.name",
-        f"block.{modid}.{name}.name",
-        f"{modid}.{name}.name",
-        f"item.{name}.name",
-        f"tile.{name}.name",
-    ]
-    if any(c in known_keys for c in candidates):
-        return True
-    suffix = f".{name}.name"
-    return any(k.endswith(suffix) for k in known_keys)
 
 
 # ---------------------------------------------------------------------------
@@ -302,7 +231,6 @@ def print_analysis(
 
     # 格式说明
     if report["modern_format"] > 0 and report["legacy_format"] > report["modern_format"]:
-        # 多数是 .lang 的旧版包混入了几个 .json mod
         print(f"  旧版 (.lang):      {report['legacy_format']}")
         print(f"  新版 (.json):      {report['modern_format']}  (少数 1.12.2 mod 也使用 .json 格式)")
     elif report["modern_format"] > 0:
