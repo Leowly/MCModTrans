@@ -3,7 +3,7 @@ name = "modtrans"
 version = "0.1.0"
 description = "Minecraft Mod Chinese Translation Tool"
 readme = "README.md"
-requires-python = ">=3.13"
+requires-python = ">=3.13,<3.14"
 dependencies = [
     "chardet>=5",
     "click>=8.4.1",
