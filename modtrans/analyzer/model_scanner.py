@@ -65,22 +65,39 @@ class ScanResult:
         return len(self.untagged_items) + len(self.untagged_blocks)
 
     def gap_dicts(self) -> list[dict]:
+        """Generate gap dicts for untagged items/blocks.
+
+        When the model filename already starts with item./tile./block.
+        (e.g. item.pe_wind_projectile), the name is already a dot-format key
+        prefix — just append .name. Otherwise use the standard colon format
+        item.<modid>:<name>.name.
+        """
         gaps: list[dict] = []
         for name in self.untagged_items:
-            key = f"item.{self.modid}:{name}.name"
+            if name.startswith(("item.", "tile.", "block.")):
+                key = f"{name}.name"
+                display_name = name.split(".", 1)[1] if "." in name else name
+            else:
+                key = f"item.{self.modid}:{name}.name"
+                display_name = name
             gaps.append({
                 "source_modid": self.modid,
                 "key": key,
-                "suggested_en": _name_to_english(name),
+                "suggested_en": _name_to_english(display_name),
                 "item_name": name,
                 "item_type": "item",
             })
         for name in self.untagged_blocks:
-            key = f"tile.{self.modid}:{name}.name"
+            if name.startswith(("item.", "tile.", "block.")):
+                key = f"{name}.name"
+                display_name = name.split(".", 1)[1] if "." in name else name
+            else:
+                key = f"tile.{self.modid}:{name}.name"
+                display_name = name
             gaps.append({
                 "source_modid": self.modid,
                 "key": key,
-                "suggested_en": _name_to_english(name),
+                "suggested_en": _name_to_english(display_name),
                 "item_name": name,
                 "item_type": "block",
             })
@@ -337,6 +354,14 @@ def _find_matching_keys(
             if root.endswith(f":{name}") or root.endswith(f".{name}"):
                 matched.append(root)
                 break
+
+    # Direct model-name-as-prefix match: when the model filename already starts
+    # with "item."/"tile." (e.g. "item.pe_wind_projectile"), the file stem
+    # itself may form a valid key by just appending ".name".
+    if not matched and name.startswith(("item.", "tile.", "block.")):
+        candidate = f"{name}.name"
+        if candidate in known_keys:
+            matched.append(candidate)
 
     return matched
 

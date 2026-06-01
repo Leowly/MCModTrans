@@ -146,8 +146,26 @@ class AIClient:
                 batch.batch_id, len(empty_keys),
             )
 
+        # 模板文本未翻译 — AI 对含 %%s/%%d 等占位符的模板文本（如 "%%s of X"）
+        # 倾向于直接返回原文。检测并纳入补译（补译时 AI 有第二次机会翻对）
+        _TEMPLATE_PAT = __import__('re').compile(r'%(\d+\$)?[sdf%]')
+        template_keys = {
+            k for k, v in translations.items()
+            if k in expected_keys
+            and v.strip() == all_entries.get(k, "").strip()
+            and _TEMPLATE_PAT.search(all_entries.get(k, ""))
+        }
+        if template_keys:
+            for k in template_keys:
+                missed_entries[k] = all_entries[k]
+                del translations[k]
+            logger.info(
+                "批次 %s: %d 个模板文本未翻译，纳入集中补译",
+                batch.batch_id, len(template_keys),
+            )
+
         if missed_entries:
-            missing_count = len(missing_keys) + len(empty_keys)
+            missing_count = len(missing_keys) + len(empty_keys) + len(template_keys)
             logger.info(
                 "批次 %s: %d 个键未返回，纳入集中补译",
                 batch.batch_id, missing_count,
