@@ -51,17 +51,7 @@ DO NOT modify, translate, or alter these formatting codes in ANY way:
 - Numbers, coordinates, version strings
 - Minecraft color codes and formatting codes
 
-## 4. EXISTING ZH_CN WITH ENGLISH TEXT
-- Some entries may already have a zh_cn key but the value is still English.
-- If the English text is a PROPER NOUN (brand name, person name, unique \
-identifier) that should remain in English even in a Chinese context, \
-keep it as-is.
-- If the English text is a regular phrase/description that was simply \
-not translated yet, translate it normally.
-- Use your judgment: "Iron Sword" should be "铁剑", but "OpenComputers" \
-is a mod name and should stay as "OpenComputers".
-
-## 5. REFERENCE TRANSLATIONS
+## 4. REFERENCE TRANSLATIONS
 Common Minecraft terminology for consistency:
   Iron Sword → 铁剑              Diamond Pickaxe → 钻石镐
   Dirt → 泥土                    Stone → 石头
@@ -98,7 +88,7 @@ Common Minecraft terminology for consistency:
   Yes → 是                       No → 否
   True → 是                      False → 否
 
-## 6. OUTPUT FORMAT
+## 5. OUTPUT FORMAT
 - Return ONLY a valid JSON object.
 - Keys MUST be exactly as provided (identical strings).
 - Values MUST be the Chinese translation.

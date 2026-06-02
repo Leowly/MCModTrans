@@ -106,7 +106,8 @@ class AIClient:
 
         # Call + parse（异常低回复率自动重试一次）
         translations, usage = await self._call_and_parse(
-            SYSTEM_PROMPT, user_message,
+            SYSTEM_PROMPT,
+            user_message,
             expected=len(all_entries),
             batch_id=batch.batch_id,
         )
@@ -125,14 +126,13 @@ class AIClient:
 
         # 缺失的 key — key 不在 AI 响应中
         missing_keys = expected_keys - set(translations.keys())
-        missed_entries = {
-            k: all_entries[k] for k in missing_keys if k in all_entries
-        }
+        missed_entries = {k: all_entries[k] for k in missing_keys if k in all_entries}
 
         # 空值 key — 英文原文有内容但 AI 返回空值，视同缺失，纳入补译
         # 注意：英文原文本身就是空的（如占位 tooltip）不算异常
         empty_keys = {
-            k for k, v in translations.items()
+            k
+            for k, v in translations.items()
             if k in expected_keys
             and (not v or not v.strip())
             and all_entries.get(k, "").strip()
@@ -143,14 +143,16 @@ class AIClient:
                 del translations[k]
             logger.info(
                 "批次 %s: %d 个翻译值为空，纳入集中补译",
-                batch.batch_id, len(empty_keys),
+                batch.batch_id,
+                len(empty_keys),
             )
 
         # 模板文本未翻译 — AI 对含 %%s/%%d 等占位符的模板文本（如 "%%s of X"）
         # 倾向于直接返回原文。检测并纳入补译（补译时 AI 有第二次机会翻对）
-        _TEMPLATE_PAT = __import__('re').compile(r'%(\d+\$)?[sdf%]')
+        _TEMPLATE_PAT = __import__("re").compile(r"%(\d+\$)?[sdf%]")
         template_keys = {
-            k for k, v in translations.items()
+            k
+            for k, v in translations.items()
             if k in expected_keys
             and v.strip() == all_entries.get(k, "").strip()
             and _TEMPLATE_PAT.search(all_entries.get(k, ""))
@@ -161,14 +163,16 @@ class AIClient:
                 del translations[k]
             logger.info(
                 "批次 %s: %d 个模板文本未翻译，纳入集中补译",
-                batch.batch_id, len(template_keys),
+                batch.batch_id,
+                len(template_keys),
             )
 
         if missed_entries:
             missing_count = len(missing_keys) + len(empty_keys) + len(template_keys)
             logger.info(
                 "批次 %s: %d 个键未返回，纳入集中补译",
-                batch.batch_id, missing_count,
+                batch.batch_id,
+                missing_count,
             )
 
         # 校验（仅日志）
@@ -207,7 +211,9 @@ class AIClient:
         """
         user_message = build_user_message(entries, mod_context=context)
         translations, _ = await self._call_and_parse(
-            SYSTEM_PROMPT, user_message, expected=len(entries),
+            SYSTEM_PROMPT,
+            user_message,
+            expected=len(entries),
         )
         return translations if translations is not None else {}
 
@@ -228,10 +234,13 @@ class AIClient:
             (key → zh_text dict, usage dict).
         """
         user_message = build_user_message(
-            entries, mod_context=context or "集中补译",
+            entries,
+            mod_context=context or "集中补译",
         )
         translations, usage = await self._call_and_parse(
-            SYSTEM_PROMPT, user_message, expected=len(entries),
+            SYSTEM_PROMPT,
+            user_message,
+            expected=len(entries),
         )
         if translations is None:
             translations = {}
@@ -243,7 +252,8 @@ class AIClient:
         still_missing = expected - found
         if still_missing:
             logger.warning(
-                "补译仍有 %d 个键未返回，使用英文原文", len(still_missing),
+                "补译仍有 %d 个键未返回，使用英文原文",
+                len(still_missing),
             )
             for k in still_missing:
                 translations[k] = entries[k]
@@ -276,7 +286,9 @@ class AIClient:
         try:
             response_text, usage = await self._call_api(system_prompt, user_message)
         except Exception as e:
-            logger.error("%sAPI 调用失败: %s", f"批次 {batch_id}: " if batch_id else "", e)
+            logger.error(
+                "%sAPI 调用失败: %s", f"批次 {batch_id}: " if batch_id else "", e
+            )
             return None, {}
 
         try:
@@ -291,18 +303,24 @@ class AIClient:
             if got < expected * _MIN_RESPONSE_RATIO:
                 logger.warning(
                     "批次 %s: AI 仅返回 %d/%d 键 (%.0f%%)，疑似模型波动，重试一次",
-                    batch_id, got, expected, got / expected * 100,
+                    batch_id,
+                    got,
+                    expected,
+                    got / expected * 100,
                 )
                 try:
                     response_text2, usage2 = await self._call_api(
-                        system_prompt, user_message,
+                        system_prompt,
+                        user_message,
                     )
                     usage = _merge_usage(usage, usage2)
                     translations2 = await self._parse_response(response_text2)
                     if len(translations2) > got:
                         logger.info(
                             "批次 %s: 重试成功，获得 %d/%d 键 (%.0f%%)",
-                            batch_id, len(translations2), expected,
+                            batch_id,
+                            len(translations2),
+                            expected,
                             len(translations2) / expected * 100,
                         )
                         translations = translations2
@@ -336,6 +354,7 @@ class AIClient:
 
         payload: dict[str, Any] = {
             "model": self._config.model,
+            "max_tokens": 131072,
             "temperature": self._config.temperature,
             "response_format": {"type": "json_object"},
             "messages": [
@@ -413,8 +432,7 @@ class AIClient:
                 )
                 if finish_reason == "length":
                     logger.warning(
-                        "API 响应被截断 (finish_reason=length) — "
-                        "部分翻译可能丢失"
+                        "API 响应被截断 (finish_reason=length) — 部分翻译可能丢失"
                     )
 
                 return content, usage
@@ -502,9 +520,7 @@ class AIClient:
             warnings.append(f"多余 (幻觉) {len(extra)} 个键")
 
         # Check for empty values
-        empty_values = [
-            k for k, v in translations.items() if not v or not v.strip()
-        ]
+        empty_values = [k for k, v in translations.items() if not v or not v.strip()]
         if empty_values:
             warnings.append(f"{len(empty_values)} 个翻译值为空")
 
