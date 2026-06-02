@@ -8,12 +8,10 @@ OpenAI-compatible APIs.
 Design:
 - SYSTEM_PROMPT: complete system prompt with all instructions and references
 - build_user_message(): constructs the dynamic user message per batch
-- classify_existing_english(): identifies zh_cn entries that still contain English
 """
 
 from __future__ import annotations
 
-from typing import Optional
 
 # ===========================================================================
 # FROZEN SYSTEM PROMPT — DO NOT MODIFY AT RUNTIME
@@ -110,6 +108,7 @@ Common Minecraft terminology for consistency:
 - Example correct output: {"key1": "翻译1", "key2": "翻译2"}
 """
 
+
 # ===========================================================================
 # User message builder
 # ===========================================================================
@@ -118,19 +117,12 @@ Common Minecraft terminology for consistency:
 def build_user_message(
     entries: dict[str, str],
     mod_context: str = "",
-    existing_chinese: Optional[dict[str, str]] = None,
-    keep_english_keys: Optional[set[str]] = None,
 ) -> str:
     """Build the dynamic user message containing the entries to translate.
 
     Args:
         entries: Translation key → English text to translate.
         mod_context: Human-readable context like "Tinkers' Construct by mDiyo (MC 1.12.2)".
-        existing_chinese: Pre-existing zh_cn entries already in Chinese
-            (shown as reference, not to be translated).
-        keep_english_keys: Keys where the existing zh_cn value is English
-            text that may be a proper noun — AI decides whether to keep
-            or translate.
 
     Returns:
         Formatted user message string.
@@ -141,101 +133,17 @@ def build_user_message(
     if mod_context:
         parts.append(f"Mod: {mod_context}")
 
-    # Existing Chinese reference translations (correct translations, skip)
-    if existing_chinese:
-        filtered = _filter_valid_translations(existing_chinese, entries)
-        if filtered:
-            parts.append(
-                "Reference (ALREADY translated correctly — do NOT translate again):"
-            )
-            parts.append(_format_json_block(filtered))
-
-    # Keys where zh_cn has English text — AI should decide
-    if keep_english_keys:
-        keys_to_check = {
-            k: entries[k] for k in keep_english_keys if k in entries
-        }
-        if keys_to_check:
-            parts.append(
-                "These keys already have a zh_cn entry but it contains ENGLISH text. "
-                "Decide for each: if it's a proper noun (mod name, brand, person) "
-                "that should stay English, keep it as-is. Otherwise, translate it:"
-            )
-            parts.append(_format_json_block(keys_to_check))
-
-    # Entries to translate (exclude already-translated and already-handled)
-    skip_keys: set[str] = set()
-    if existing_chinese:
-        skip_keys.update(_filter_valid_translations(existing_chinese, entries).keys())
-    if keep_english_keys:
-        skip_keys.update(keep_english_keys)
-
-    to_translate = {k: v for k, v in entries.items() if k not in skip_keys}
-
-    if not to_translate:
+    if not entries:
         parts.append("Translate the following to zh_CN (may be empty):")
         parts.append("{}")
     else:
         parts.append(
-            f"Translate the following {len(to_translate)} entries to zh_CN. "
+            f"Translate the following {len(entries)} entries to zh_CN. "
             "Output ONLY the JSON object:"
         )
-        parts.append(_format_json_block(to_translate))
+        parts.append(_format_json_block(entries))
 
     return "\n\n".join(parts)
-
-
-def classify_existing_chinese(
-    english_entries: dict[str, str],
-    existing_chinese: dict[str, str],
-) -> tuple[dict[str, str], set[str]]:
-    """Analyze pre-existing zh_cn entries to determine what to skip vs. review.
-
-    Args:
-        english_entries: The source en_us entries.
-        existing_chinese: The pre-existing zh_cn entries.
-
-    Returns:
-        Tuple of (fully_translated dict, keys_to_review set).
-        - fully_translated: entries where zh_cn value differs from en_us
-          (confidently translated — skip these)
-        - keys_to_review: keys where zh_cn value equals en_us value
-          (possibly a proper noun that should stay English — let AI decide)
-    """
-    fully_translated: dict[str, str] = {}
-    keys_to_review: set[str] = set()
-
-    for key, zh_value in existing_chinese.items():
-        en_value = english_entries.get(key)
-        if en_value is None:
-            # Key exists in zh_cn but not in en_us — keep as reference
-            fully_translated[key] = zh_value
-        elif zh_value.strip() == en_value.strip():
-            # zh_cn has the same English text — needs review
-            keys_to_review.add(key)
-        else:
-            # zh_cn differs from en_us — properly translated
-            fully_translated[key] = zh_value
-
-    return fully_translated, keys_to_review
-
-
-# ---------------------------------------------------------------------------
-# Helpers
-# ---------------------------------------------------------------------------
-
-
-def _filter_valid_translations(
-    existing_chinese: dict[str, str],
-    english_entries: dict[str, str],
-) -> dict[str, str]:
-    """Return only zh_cn entries that differ from their en_us counterparts."""
-    result: dict[str, str] = {}
-    for key, zh_value in existing_chinese.items():
-        en_value = english_entries.get(key)
-        if en_value is None or zh_value.strip() != en_value.strip():
-            result[key] = zh_value
-    return result
 
 
 def _format_json_block(data: dict[str, str]) -> str:

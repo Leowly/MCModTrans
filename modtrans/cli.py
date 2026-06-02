@@ -402,7 +402,6 @@ def translate(
     
     # 收集所有待翻译的 key
     all_untranslated: dict[str, str] = {}  # key → en_text
-    all_existing_ref: dict[str, str] = {}  # key → zh_text
     
     for mod in all_mod_assets:
         from .translator.batcher import Batcher
@@ -410,11 +409,7 @@ def translate(
         for key in untranslated:
             all_untranslated[key] = mod.english_entries[key]
         
-        # existing Chinese as reference
-        for key, zh_value in mod.existing_chinese.items():
-            en_value = mod.english_entries.get(key)
-            if en_value is None or zh_value.strip() != en_value.strip():
-                all_existing_ref[key] = zh_value
+
     
     if not all_untranslated:
         click.echo("所有条目已完成翻译 — 无需调用 AI！")
@@ -512,7 +507,7 @@ def translate(
                     }
                     for k, zh in ai_new.items():
                         en = batch.entries.get(k)
-                        if en and zh and en != zh:
+                        if en and zh:
                             tm_new_entries[en] = zh
                     # 收集缺失
                     if result.missed_entries:
@@ -560,7 +555,7 @@ def translate(
                         # 补译的新翻译也写入记忆库
                         for k, zh in zh_result.items():
                             en = all_missed.get(k)
-                            if en and zh and en != zh:
+                            if en and zh:
                                 tm_new_entries[en] = zh
                         click.echo(
                             f"\r  补译 [{chunk_num}/{retry_parts}] "

@@ -65,8 +65,6 @@ class TranslationBatch:
     total_keys: int
     entries: dict[str, str] = field(default_factory=dict)
     # ^ key → en_text actually sent to AI in this batch (subset of mod.english_entries)
-    existing_reference: dict[str, str] = field(default_factory=dict)
-    # ^ existing zh_cn entries from all mods in batch, shown as reference to AI
     context_info: str = ""  # Added to user prompt for translation context
 
 

@@ -1,6 +1,19 @@
-# ModTrans Configuration
+# ModTrans 配置文件
 
 [ai]
+# API 接口地址 — 使用第三方 API 时修改此处 (DeepSeek、通义千问等)
 api_base = "https://api.openai.com/v1"
+# API 密钥
 api_key = "sk-your-api-key-here"
+# 模型名称
 model = "gpt-4o"
+# 每次翻译 API 调用的最大条目数 (默认 100)
+max_keys_per_call = 100
+
+[general]
+# 是否加载 CFPA i18n 社区汉化数据作为参考
+enable_i18n = true
+# 是否填充跨模组缺失翻译键
+enable_cross_mod_fill = true
+# 是否为无语言文件的 mod 从模型推断物品名
+enable_untagged_fill = true

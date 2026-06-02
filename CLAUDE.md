@@ -67,7 +67,7 @@ The pipeline runs in five stages (defined in `modtrans/cli.py:translate`):
 
 - `GameVersion` enum: `LEGACY` (1.12.2-, `.lang`), `MODERN` (1.13+, `.json`), `UNKNOWN`
 - `ModAssets`: per-mod container — `english_entries`, `chinese_entries` (output), `existing_chinese` (pre-existing in JAR or from i18n), `ModMetadata` (author is used as the batching key)
-- `TranslationBatch`: group of mods + their entries sent in one API call. `batch_id` format: `"author_<name>"` or `"bundled_small_mods_N"`
+- `TranslationBatch`: group of mods + their entries sent in one API call. `batch_id` format: `"author_<name>"` or `"bundled_small_mods_N"`. Only contains `entries` (key→en_text) and `context_info`; no `existing_reference` field.
 - `PipelineReport`: accumulates stats throughout the pipeline run
 
 ### Translation memory (`modtrans/translator/translation_memory.py`)
@@ -81,6 +81,8 @@ JAR parse results are cached in SQLite (`{cache_dir}/jar_cache.db`), keyed by SH
 ### Prompt strategy (`modtrans/translator/prompt.py`)
 
 `SYSTEM_PROMPT` is a module-level frozen constant — never constructed or modified at runtime. This ensures byte-for-byte identical system messages across all API calls to maximize OpenAI prompt cache hit rate. Customization goes through `PromptConfig.custom_prefix` (prepended to the frozen prompt) or `system_prompt_file` (replaces it entirely).
+
+`build_user_message()` constructs the per-batch user message with entries to translate and mod context. Previously it also accepted `existing_chinese` and `keep_english_keys` to show AI reference translations and ask it to decide on proper nouns — these have been removed to reduce token cost. Now it only sends the entries that need translation.
 
 ### Compatibility system (`modtrans/compat.py`)
 

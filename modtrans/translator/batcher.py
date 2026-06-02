@@ -240,7 +240,6 @@ class Batcher:
             key_filter: Optional key subset (used when splitting a large mod).
         """
         all_entries: dict[str, str] = {}
-        all_existing_ref: dict[str, str] = {}
 
         for mod in mods:
             untranslated = self._untranslated_keys(mod)
@@ -248,12 +247,6 @@ class Batcher:
                 untranslated = untranslated & key_filter
             for key in untranslated:
                 all_entries[key] = mod.english_entries[key]
-
-            # existing Chinese as reference
-            for key, zh_value in mod.existing_chinese.items():
-                en_value = mod.english_entries.get(key)
-                if en_value is None or zh_value.strip() != en_value.strip():
-                    all_existing_ref[key] = zh_value
 
         # context string
         mod_names = []
@@ -274,7 +267,6 @@ class Batcher:
             mods=mods,
             total_keys=len(all_entries),
             entries=all_entries,
-            existing_reference=all_existing_ref,
             context_info=context,
         )
 

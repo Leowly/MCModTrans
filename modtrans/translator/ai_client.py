@@ -336,7 +336,6 @@ class AIClient:
 
         payload: dict[str, Any] = {
             "model": self._config.model,
-            "max_tokens": self._config.max_tokens,
             "temperature": self._config.temperature,
             "response_format": {"type": "json_object"},
             "messages": [
