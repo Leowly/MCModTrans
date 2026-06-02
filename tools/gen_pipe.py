@@ -1,0 +1,36 @@
+from pathlib import Path
+
+# Pipeline module content built as a list of source lines
+PLINES = []
+def P(s=""):
+    PLINES.append(s)
+
+P("""Translation pipeline module.""")
+P("""""")
+P("Extracted from cli.py translate(). Full pipeline: parse -> supplement -> translate -> package.")
+P("""""")
+P("")
+P("from __future__ import annotations")
+P("import asyncio, logging, time")
+P("from dataclasses import dataclass")
+P("from pathlib import Path")
+P("from typing import Callable")
+P("from .config import AppConfig")
+P("from .models import PipelineReport")
+P("logger = logging.getLogger(__name__)")
+P("")
+P("class _NoOpCache:")
+P("    def __enter__(self): return self")
+P("    def __exit__(self, *a): pass")
+P("    @staticmethod")
+P("    def get(j): return None")
+P("    @staticmethod")
+P("    def put(j, a): pass")
+P("")
+P("@dataclass")
+P("class TranslationOutput:")
+P("    translated_mods: list")
+P("    report: PipelineReport")
+P("    tm_hits: dict")
+P("    mc_version: str")
+P("")

@@ -1,4 +1,4 @@
-﻿"""查找 mod JAR 中缺少英文显示名称的物品/方块。
+"""查找 mod JAR 中缺少英文显示名称的物品/方块。
 
 在 Minecraft 中，如果物品/方块没有对应的语言条目，游戏会直接显示
 原始 ID（如 ``item.modid.redstone_sword.name``），影响游玩体验。
@@ -16,12 +16,12 @@
 from __future__ import annotations
 
 import logging
-import re
 from pathlib import Path
 from typing import Any
 from zipfile import ZipFile
 
-from ..parser.jar_parser import JarParser, JarParseError
+from ..analyzer.model_scanner import collect_model_files, name_to_english as _name_to_english
+from ..parser.jar_parser import JarParser, JarParseError, extract_modid_from_zip
 
 logger = logging.getLogger(__name__)
 
@@ -80,13 +80,7 @@ def _analyze_single_jar(jar_path: Path) -> dict[str, Any] | None:
     with ZipFile(jar_path, "r") as zf:
         names = zf.namelist()
 
-        model_items: set[str] = set()
-        model_blocks: set[str] = set()
-        for name in names:
-            if "models/item/" in name and name.endswith(".json"):
-                model_items.add(Path(name).stem)
-            elif "blockstates/" in name and name.endswith(".json"):
-                model_blocks.add(Path(name).stem)
+        model_items, model_blocks = collect_model_files(names)
 
         if not model_items and not model_blocks:
             return None  # 没有任何模型文件，无可检测
@@ -110,7 +104,7 @@ def _analyze_single_jar(jar_path: Path) -> dict[str, Any] | None:
     except JarParseError:
         # 无语言文件 — 从路径推断 modid
         with ZipFile(jar_path, "r") as zf:
-            modid = _infer_modid_from_zip(zf)
+            modid = extract_modid_from_zip(zf)
         result_untagged = scan_jar_direct(jar_path, modid, set())
 
     # 3. 构造返回字典
@@ -144,21 +138,6 @@ def _analyze_single_jar(jar_path: Path) -> dict[str, Any] | None:
     return result
 
 
-def _infer_modid_from_zip(zf: ZipFile) -> str:
-    """从已打开的 ZIP 文件推断 modid。
-
-    优先从 assets/<modid>/ 路径提取。这是用于回退（无语言文件）的情况，
-    因为 JarParser 在这些情况下会抛出异常。
-    """
-    for name in zf.namelist():
-        parts = name.split("/")
-        if len(parts) >= 2 and parts[0] == "assets":
-            candidate = parts[1]
-            if candidate and candidate != "lang":
-                return candidate
-    return "unknown"
-
-
 def _suggest_keys(
     items: list[str],
     blocks: list[str],
@@ -174,17 +153,6 @@ def _suggest_keys(
 # ---------------------------------------------------------------------------
 # 辅助函数
 # ---------------------------------------------------------------------------
-
-_ITEM_NAME_CLEANUP = re.compile(r"[^a-zA-Z0-9_]+")
-
-
-def _name_to_english(name: str) -> str:
-    """将物品的内部名称转为可读英文。
-
-    ``redstone_sword`` -> "Redstone Sword"
-    """
-    from ..analyzer.model_scanner import _name_to_english
-    return _name_to_english(name)
 
 
 def _is_en_us(path: str) -> bool:

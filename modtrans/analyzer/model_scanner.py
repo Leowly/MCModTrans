@@ -1,4 +1,4 @@
-﻿"""Shared model scanner — detect untagged items/blocks from model files.
+"""Shared model scanner — detect untagged items/blocks from model files.
 
 Consolidates model-scanning logic that was previously duplicated across
 three separate code paths (translate pipeline, analyze command,
@@ -83,7 +83,7 @@ class ScanResult:
             gaps.append({
                 "source_modid": self.modid,
                 "key": key,
-                "suggested_en": _name_to_english(display_name),
+                "suggested_en": name_to_english(display_name),
                 "item_name": name,
                 "item_type": "item",
             })
@@ -97,7 +97,7 @@ class ScanResult:
             gaps.append({
                 "source_modid": self.modid,
                 "key": key,
-                "suggested_en": _name_to_english(display_name),
+                "suggested_en": name_to_english(display_name),
                 "item_name": name,
                 "item_type": "block",
             })
@@ -202,7 +202,7 @@ def _scan_inner(
     config: ModelScannerConfig,
 ) -> ScanResult:
     """Core scanning logic shared by both entry points."""
-    model_items, model_blocks = _collect_model_files(names)
+    model_items, model_blocks = collect_model_files(names)
 
     if not model_items and not model_blocks:
         return ScanResult(modid=modid, known_keys=known_keys)
@@ -247,7 +247,7 @@ def _scan_inner(
     )
 
 
-def _collect_model_files(names: list[str]) -> tuple[set[str], set[str]]:
+def collect_model_files(names: list[str]) -> tuple[set[str], set[str]]:
     """Collect item/block names from model file paths in a JAR.
 
     Returns:
@@ -366,7 +366,7 @@ def _find_matching_keys(
     return matched
 
 
-def _name_to_english(name: str) -> str:
+def name_to_english(name: str) -> str:
     """Convert internal registry name to readable English.
 
     ``redstone_sword`` -> "Redstone Sword"

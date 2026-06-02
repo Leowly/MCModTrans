@@ -1,4 +1,4 @@
-﻿"""分析 mods 结构 — 翻译覆盖率、i18n 匹配、未命名物品检测。
+"""分析 mods 结构 — 翻译覆盖率、i18n 匹配、未命名物品检测。
 
 Usage::
 
@@ -79,6 +79,7 @@ def analyze_mods(mods_dir: Path) -> dict[str, Any]:
                 "zh_missing": zh_missing,
                 "english_in_zh": english_still_in_zh,
                 "encoding": assets.source_encoding,
+                "_assets": assets,
             })
         except JarParseError as e:
             logger.warning("跳过 %s: %s", jar_path.name, e)
@@ -97,6 +98,7 @@ def analyze_mods(mods_dir: Path) -> dict[str, Any]:
                 "english_in_zh": "-",
                 "encoding": "-",
                 "error": str(e),
+                "_assets": None,
             })
 
     return {
@@ -157,19 +159,13 @@ def analyze_mods_extended(
             i18n_version = ""
 
     # --- 未命名物品检测（使用共享的 model_scanner，与 translate/find-untagged 一致）---
-    from ..analyzer.model_scanner import scan_jar_direct
+    from ..analyzer.model_scanner import scan_mod
 
     for mod in basic["mods"]:
-        if mod["format"] == "no lang":
-            continue
-        jar_name = mod["jar"]
-        jar_path = mods_dir / jar_name
-        if not jar_path.is_file():
+        assets = mod.get("_assets")
+        if assets is None:
             continue
         try:
-            parser = JarParser()
-            assets = parser.parse_jar(jar_path)
-            from ..analyzer.model_scanner import scan_mod
             result = scan_mod(assets)
             if result.has_untagged:
                 mod["untagged_items"] = result.untagged_items
@@ -180,6 +176,10 @@ def analyze_mods_extended(
     basic["i18n_version"] = locals().get("i18n_version", "")
     basic["i18n_matched"] = i18n_matched
     basic["i18n_keys_total"] = i18n_keys_total
+
+    # Clean up internal _assets keys so they don't appear in output
+    for mod in basic["mods"]:
+        mod.pop("_assets", None)
 
     return basic
 

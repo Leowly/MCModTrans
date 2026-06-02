@@ -1,4 +1,4 @@
-﻿"""Core JAR parser — extracts language files and metadata from mod JARs.
+"""Core JAR parser — extracts language files and metadata from mod JARs.
 
 Orchestrates the full parsing pipeline:
 1. Open JAR as ZIP
@@ -158,58 +158,28 @@ class JarParser:
     def _generate_from_models(
         self, jar_path: Path, zf: ZipFile, metadata: ModMetadata
     ) -> ModAssets:
-        """从模型文件推断英文名称，生成伪 en_us 条目。
-
-        用于完全没有 en_us 语言文件的 mod。从 models/item/ 和
-        blockstates/ 的文件名推断标准 Minecraft lang key 和英文名。
-
-        例如:
-        - models/item/redstone_sword.json → item.<modid>.redstone_sword.name = "Redstone Sword"
-        - blockstates/copper_furnace.json → tile.<modid>.copper_furnace.name = "Copper Furnace"
-        """
-        import re
-        from pathlib import Path as _Path
+        """Generate pseudo en_us entries from model files when no lang files exist."""
+        from ..analyzer.model_scanner import collect_model_files, name_to_english
 
         names = zf.namelist()
+        modid = metadata.modid or _infer_modid_from_assets(names)
 
-        # 推断 modid
-        modid = metadata.modid or self._infer_modid_from_any(names)
-
-        # 收集模型物品和方块
-        model_items: set[str] = set()
-        model_blocks: set[str] = set()
-
-        for name in names:
-            if "models/item/" in name and name.endswith(".json"):
-                model_items.add(_Path(name).stem)
-            elif "blockstates/" in name and name.endswith(".json"):
-                model_blocks.add(_Path(name).stem)
-
+        model_items, model_blocks = collect_model_files(names)
         if not model_items and not model_blocks:
             raise JarParseError(
                 f"{jar_path.name} 中既无语言文件也无模型文件，无法生成翻译"
             )
 
-        # 检测游戏版本
         game_version = self.detect_game_version(zf)
 
-        # 生成伪英文条目
         english_entries: dict[str, str] = {}
-        _cleanup = re.compile(r"[^a-zA-Z0-9_]+")
-
         for item_name in sorted(model_items):
             key = f"item.{modid}.{item_name}.name"
-            readable = _cleanup.sub(" ", item_name)
-            readable = " ".join(w.capitalize() for w in readable.split())
-            english_entries[key] = readable
-
+            english_entries[key] = name_to_english(item_name)
         for block_name in sorted(model_blocks):
             key = f"tile.{modid}.{block_name}.name"
-            readable = _cleanup.sub(" ", block_name)
-            readable = " ".join(w.capitalize() for w in readable.split())
-            english_entries[key] = readable
+            english_entries[key] = name_to_english(block_name)
 
-        # 检查是否有现有的 zh_cn
         existing_chinese = {}
         zh_paths = [
             n for n in names
@@ -221,10 +191,7 @@ class JarParser:
 
         logger.info(
             "%s: 从模型文件生成 %d 条 en_us 条目 (%d 物品, %d 方块)",
-            jar_path.name,
-            len(english_entries),
-            len(model_items),
-            len(model_blocks),
+            jar_path.name, len(english_entries), len(model_items), len(model_blocks),
         )
 
         return ModAssets(
@@ -236,17 +203,6 @@ class JarParser:
             jar_path=jar_path,
             source_encoding="generated",
         )
-
-    @staticmethod
-    def _infer_modid_from_any(names: list[str]) -> str:
-        """从 ZIP 文件列表中的任意路径推断 modid。"""
-        for name in names:
-            parts = name.split("/")
-            if len(parts) >= 2 and parts[0] == "assets":
-                candidate = parts[1]
-                if candidate and candidate != "lang":
-                    return candidate
-        return "unknown"
 
     # ------------------------------------------------------------------
     # Game version detection
@@ -462,6 +418,35 @@ class JarParser:
             if part == "assets" and i + 2 < len(parts) and parts[i + 2] == "lang":
                 return parts[i + 1]
         return "unknown"
+
+
+def _infer_modid_from_assets(names: list[str]) -> str:
+    """Infer modid from assets/<modid>/ paths in a name list."""
+    for name in names:
+        parts = name.split("/")
+        if len(parts) >= 2 and parts[0] == "assets":
+            candidate = parts[1]
+            if candidate and candidate != "lang":
+                return candidate
+    return "unknown"
+
+
+def collect_model_files(zf: ZipFile) -> tuple[set[str], set[str]]:
+    """Collect item/block names from model file paths in a ZIP."""
+    items: set[str] = set()
+    blocks: set[str] = set()
+    for name in zf.namelist():
+        if "models/item/" in name and name.endswith(".json"):
+            items.add(Path(name).stem)
+        elif "blockstates/" in name and name.endswith(".json"):
+            blocks.add(Path(name).stem)
+    return items, blocks
+
+
+def extract_modid_from_zip(zf: ZipFile) -> str:
+    """Infer modid from assets/<modid>/ paths in a ZIP file."""
+    return _infer_modid_from_assets(zf.namelist())
+
 
 
 # ------------------------------------------------------------------
