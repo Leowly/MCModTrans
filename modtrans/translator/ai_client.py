@@ -94,7 +94,7 @@ class AIClient:
         Args:
             batch: TranslationBatch with mods grouped together.
             issues: Optional list to append human-readable issue summaries to.
-                    E.g. ["1 条模板文本未翻译", "2 个键缺失"].
+                    E.g. ["1 条含占位符未译", "2 个键缺失"].
                     Callers can use these for smarter progress display.
 
         Returns:
@@ -148,7 +148,7 @@ class AIClient:
                 del translations[k]
             issue_parts.append(f"{len(empty_keys)} 条返回为空")
 
-        # 2. 模板文本未翻译 — AI 对含 %%s/%%d 等占位符的模板文本（如 "%%s of X"）
+        # 2. 含占位符的条目未译 — AI 对含 %s/%d 等占位符的文本（如 "%s of X"）
         #    倾向于直接返回原文。检测并纳入补译（补译时 AI 有第二次机会翻对）
         _TEMPLATE_PAT = __import__("re").compile(r"%(\d+\$)?[sdf%]")
         template_keys = {
@@ -162,7 +162,7 @@ class AIClient:
             for k in template_keys:
                 missed_entries[k] = all_entries[k]
                 del translations[k]
-            issue_parts.append(f"{len(template_keys)} 条模板文本未翻译")
+            issue_parts.append(f"{len(template_keys)} 条含占位符未译")
 
         # 3. 未返回的 key（不含已收集的空值和模板）
         still_missing = missing_keys - set(missed_entries.keys())
@@ -173,7 +173,7 @@ class AIClient:
             total = len(missed_entries)
             detail = "，".join(issue_parts)
             msg = f"{total} 条需补译（{detail}）"
-            logger.info("批次 %s: %s", batch.batch_id, msg)
+            logger.debug("批次 %s: %s", batch.batch_id, msg)
             if issues is not None:
                 issues.append(msg)
 

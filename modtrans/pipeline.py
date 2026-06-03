@@ -257,14 +257,23 @@ def run_translation(
     tm_new_entries: dict[str, str] = {}
     interactive = _is_interactive()
 
-    def progress(msg, *, done=False):
+    def _short_name(name: str, max_len: int = 26) -> str:
+        """截断过长的批次名。"""
+        if len(name) <= max_len:
+            return name
+        return name[:max_len - 1] + "…"
+
+    def progress(line: str, *, done: bool = False):
+        """输出进度行。交互模式用 \\r 原地刷新，完成后换行。"""
         if interactive:
-            sys.stdout.write(f"\r  {msg.ljust(80)}")
+            sys.stdout.write(f"\r  {line.ljust(78)}")
             if done:
                 sys.stdout.write("\n")
             sys.stdout.flush()
         else:
-            log_fn(f"  {msg}")
+            # 非交互模式仅输出完成的行，避免刷屏
+            if done:
+                log_fn(f"  {line}")
 
     async def _run_translation():
         nonlocal all_translations, tm_new_entries
@@ -272,7 +281,9 @@ def run_translation(
             all_missed: dict[str, str] = {}
             for batch_idx, batch in enumerate(batches, 1):
                 issues: list[str] = []
-                progress(f"[{batch_idx}/{total_batches}] {batch.batch_id}...")
+                name = _short_name(batch.batch_id)
+                n = batch.total_keys
+                progress(f"[{batch_idx}/{total_batches}] {name} ({n} 条) ...")
                 result = await ai_client.translate_batch(batch, issues=issues)
                 report.api_calls += 1
                 if result.success:
@@ -284,10 +295,10 @@ def run_translation(
                     if result.missed_entries:
                         all_missed.update(result.missed_entries)
                     report.total_tokens += result.usage.get("total_tokens", 0)
-                    suffix = f" — {issues[0]}" if issues else ""
-                    progress(f"[{batch_idx}/{total_batches}] {batch.batch_id} OK{suffix}", done=True)
+                    suffix = f"  {issues[0]}" if issues else ""
+                    progress(f"[{batch_idx}/{total_batches}] {name} ({n} 条) OK{suffix}", done=True)
                 else:
-                    progress(f"[{batch_idx}/{total_batches}] {batch.batch_id} FAIL", done=True)
+                    progress(f"[{batch_idx}/{total_batches}] {name} ({n} 条) FAIL", done=True)
                     for k, en in batch.entries.items():
                         if k not in all_translations:
                             all_translations[k] = en
@@ -300,7 +311,7 @@ def run_translation(
                 for i in range(0, missed_total, effective_max_keys):
                     chunk = dict(missed_items[i : i + effective_max_keys])
                     chunk_num = i // effective_max_keys + 1
-                    progress(f"补译 [{chunk_num}/{retry_parts}] ({len(chunk)} 键)...")
+                    progress(f"补译 [{chunk_num}/{retry_parts}] ({len(chunk)} 键) ...")
                     try:
                         zh_result, usage2 = await ai_client.translate_missing(
                             chunk, context=f"集中补译 {chunk_num}/{retry_parts}",
@@ -311,10 +322,10 @@ def run_translation(
                             en = all_missed.get(k)
                             if en and zh:
                                 tm_new_entries[en] = zh
-                        progress(f"补译 [{chunk_num}/{retry_parts}] OK", done=True)
+                        progress(f"补译 [{chunk_num}/{retry_parts}] ({len(chunk)} 键) OK", done=True)
                     except Exception as e:
                         logger.warning("集中补译 %d/%d 失败: %s", chunk_num, retry_parts, e)
-                        progress(f"补译 [{chunk_num}/{retry_parts}] FAIL", done=True)
+                        progress(f"补译 [{chunk_num}/{retry_parts}] ({len(chunk)} 键) FAIL", done=True)
 
             _apply_translations(all_mod_assets, all_translations, {})
     asyncio.run(_run_translation())

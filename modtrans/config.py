@@ -44,7 +44,7 @@ class AIConfig:
     max_retries: int = 3
     retry_base_delay: float = 2.0
     requests_per_minute: int = 50
-    max_keys_per_call: int = 100
+    max_keys_per_call: int = 1000
 
 
 @dataclass
