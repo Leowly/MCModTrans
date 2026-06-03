@@ -7,8 +7,8 @@ api_base = "https://api.openai.com/v1"
 api_key = "sk-your-api-key-here"
 # 模型名称
 model = "gpt-4o"
-# 每次翻译 API 调用的最大条目数 (默认 100)
-max_keys_per_call = 100
+# 每次翻译 API 调用的最大条目数 (默认 400)
+max_keys_per_call = 400
 
 [general]
 # 是否加载 CFPA i18n 社区汉化数据作为参考
