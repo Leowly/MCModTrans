@@ -1,12 +1,17 @@
 """Translation pipeline module."""
 
 from __future__ import annotations
-import asyncio, logging, time
+
+import asyncio
+import logging
+import time
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Callable
+
 from .config import AppConfig
 from .models import PipelineReport
+
 logger = logging.getLogger(__name__)
 
 class _NoOpCache:
@@ -37,14 +42,17 @@ def _detect_mc_version(pack_root: Path) -> str:
     jp = pack_root / (pack_root.name + ".json")
     if not jp.is_file():
         for c in sorted(pack_root.glob("*.json")):
-            if c.stem not in ("options", "pack"): jp = c; break
+            if c.stem not in ("options", "pack"):
+                jp = c
+            break
     try:
         d = json.loads(jp.read_text(encoding="utf-8"))
         return d.get("clientVersion") or d.get("inheritsFrom") or d.get("assetIndex", {}).get("id", "")
-    except Exception: return ""
+    except Exception:
+        return ""
 def parse_only(cfg, mods_dir, mc_version="", generate_untagged=False, log_fn=print):
-    from .parser.jar_parser import JarParser, JarParseError
     from .cache.disk_cache import DiskCache
+    from .parser.jar_parser import JarParseError, JarParser
     report = PipelineReport()
     jp = sorted(mods_dir.glob("*.jar"))
     if not jp:
@@ -52,7 +60,8 @@ def parse_only(cfg, mods_dir, mc_version="", generate_untagged=False, log_fn=pri
         return [], report
     report.total_jars = len(jp)
     parser = JarParser(generate_untagged=generate_untagged)
-    if generate_untagged: log_fn("已启用未命名物品生成模式")
+    if generate_untagged:
+        log_fn("已启用未命名物品生成模式")
     all_mods = []
     ctx = DiskCache(cfg.general.cache_dir) if cfg.cache.enabled else _NoOpCache()
     with ctx as cache:
@@ -61,13 +70,16 @@ def parse_only(cfg, mods_dir, mc_version="", generate_untagged=False, log_fn=pri
                 h = DiskCache.hash_jar(j)
                 c = cache.get(h) if cfg.cache.enabled else None
                 if c:
-                    all_mods.append(c); report.parsed_jars += 1
+                    all_mods.append(c)
+                    report.parsed_jars += 1
                     report.total_keys += len(c.english_entries)
                     continue
                 a = parser.parse_jar(j)
-                all_mods.append(a); report.parsed_jars += 1
+                all_mods.append(a)
+                report.parsed_jars += 1
                 report.total_keys += len(a.english_entries)
-                if cfg.cache.enabled: cache.put(h, a)
+                if cfg.cache.enabled:
+                    cache.put(h, a)
             except JarParseError as e:
                 logger.debug("跳过 %s: %s", j.name, e)
                 report.failed_jars += 1
@@ -135,7 +147,7 @@ def run_translation(
                 del mod.existing_chinese[key]
                 removed += 1
         if removed:
-            logger.info(f"%s: 从 existing_chinese 移除 %d 个兼容性键（%s）", mod.modid, removed, reason)
+            logger.info("%s: 从 existing_chinese 移除 %d 个兼容性键（%s）", mod.modid, removed, reason)
             compat_removed_total += removed
     if compat_removed_total:
         log_fn(f"兼容性过滤: 移除 {compat_removed_total} 条可能触发 mod bug 的汉化")
@@ -298,14 +310,16 @@ def run_translation(
     log_fn("\n=== 第5步: 打包输出 ===")
     pack_format = None
     if cfg.packager.pack_format != "auto":
-        try: pack_format = int(cfg.packager.pack_format)
-        except ValueError: pass
+        try:
+            pack_format = int(cfg.packager.pack_format)
+        except ValueError:
+            pass
     pack = ResourcePack(
         name=cfg.packager.pack_name,
         description=cfg.packager.pack_description,
         pack_format=pack_format,
     )
-    output = pack.write(all_mod_assets, output_path, mc_version=mc_version)
+    pack.write(all_mod_assets, output_path, mc_version=mc_version)
     report.duration_seconds = time.monotonic() - total_start
     _log_report(report, output_path, log_fn)
     return TranslationOutput(all_mod_assets, report, tm_hits, mc_version)

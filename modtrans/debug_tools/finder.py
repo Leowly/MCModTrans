@@ -20,8 +20,9 @@ from pathlib import Path
 from typing import Any
 from zipfile import ZipFile
 
-from ..analyzer.model_scanner import collect_model_files, name_to_english as _name_to_english
-from ..parser.jar_parser import JarParser, JarParseError, extract_modid_from_zip
+from ..analyzer.model_scanner import collect_model_files
+from ..analyzer.model_scanner import name_to_english as _name_to_english
+from ..parser.jar_parser import JarParseError, JarParser, extract_modid_from_zip
 
 logger = logging.getLogger(__name__)
 
@@ -74,7 +75,7 @@ def _analyze_single_jar(jar_path: Path) -> dict[str, Any] | None:
     2. 通过 JarParser 获取 modid + 已知语言键
     3. 通过 model_scanner 执行未命名检测
     """
-    from ..analyzer.model_scanner import scan_mod, scan_jar_direct
+    from ..analyzer.model_scanner import scan_jar_direct, scan_mod
 
     # 1. 轻量扫描 JAR 获取模型文件和语言文件名
     with ZipFile(jar_path, "r") as zf:
@@ -213,13 +214,13 @@ def print_findings(results: dict[str, Any]) -> None:
             if suggested:
                 sug_items = suggested.get("items", [])[:5]
                 if sug_items:
-                    print(f"    建议生成键 (物品):")
+                    print("    建议生成键 (物品):")
                     for k in sug_items:
                         stem = k.rsplit(".", 2)[0].split(".")[-1] if "." in k else k
                         print(f"      {k} -> \"{_name_to_english(stem)}\"")
                 sug_blocks = suggested.get("blocks", [])[:3]
                 if sug_blocks:
-                    print(f"    建议生成键 (方块):")
+                    print("    建议生成键 (方块):")
                     for k in sug_blocks:
                         stem = k.rsplit(".", 2)[0].split(".")[-1] if "." in k else k
                         print(f"      {k} -> \"{_name_to_english(stem)}\"")
@@ -253,13 +254,13 @@ def print_findings(results: dict[str, Any]) -> None:
     )
     if clean_count > 0:
         print(f"\n  ✅ 完全正常的 Mod: {clean_count} 个")
-        print(f"     (所有模型物品/方块都有对应的英文名)")
+        print("     (所有模型物品/方块都有对应的英文名)")
 
     # 没有可检测内容的 mod
     no_model_count = results.get("total_jars", 0) - len(findings)
     if no_model_count > 0:
         print(f"\n  ℹ 无可检测内容的 JAR: {no_model_count} 个")
-        print(f"     (无 models/item/ 或 blockstates/ 目录)")
+        print("     (无 models/item/ 或 blockstates/ 目录)")
 
     print("\n" + "=" * 72)
     print("  提示: 对于没有语言文件的 Mod，翻译工具可以自动生成英文名并翻译。")

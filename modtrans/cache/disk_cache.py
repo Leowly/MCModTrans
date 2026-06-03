@@ -11,11 +11,10 @@ import json
 import logging
 import sqlite3
 import time
-from dataclasses import asdict
 from pathlib import Path
 from typing import Optional
 
-from ..models import ModAssets, ModMetadata, GameVersion
+from ..models import GameVersion, ModAssets, ModMetadata
 
 logger = logging.getLogger(__name__)
 

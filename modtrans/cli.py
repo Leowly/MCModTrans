@@ -4,19 +4,17 @@ from __future__ import annotations
 
 import logging
 import sys
-import time
 from pathlib import Path
 from typing import TYPE_CHECKING, Optional
 
 import click
 
 from . import __version__
-from .config import AppConfig, load_config, generate_example_config
+from .config import AppConfig, generate_example_config, load_config
 from .utils.logging_setup import setup_logging
 
 if TYPE_CHECKING:
-    from .models import ModAssets, PipelineReport, TranslationResult
-    from .packager.resource_pack import ResourcePack
+    pass
 
 logger = logging.getLogger(__name__)
 
@@ -114,8 +112,8 @@ def _detect_mc_version(pack_root: Path) -> str:
 def _try_native_dialog() -> Optional[Path]:
     """Try to open a native OS folder picker. Returns None if unavailable or cancelled."""
     try:
-        import tkinter.filedialog as fd
         import tkinter as tk
+        import tkinter.filedialog as fd
         root = tk.Tk()
         root.withdraw()
         root.attributes("-topmost", True)
@@ -262,8 +260,8 @@ def translate(
 def parse(ctx: click.Context, mods_dir: Optional[Path], output: Path) -> None:
     """解析 JAR 文件，将所有语言数据导出为 JSON（调试用）。"""
     import json
-    from .parser.jar_parser import JarParser, JarParseError
-    from .utils.progress import create_progress
+
+    from .parser.jar_parser import JarParseError, JarParser
 
     target, _ = _resolve_mods_path(mods_dir) if mods_dir else _pick_mods_folder()
     jar_paths = sorted(target.glob("*.jar"))
@@ -364,11 +362,6 @@ def cache(ctx: click.Context, clear: bool, stats: bool) -> None:
             click.echo(f"数据库:    {info['db_path']}")
         else:
             click.echo("未指定操作。请使用 --clear 或 --stats。")
-
-
-# ======================================================================
-# init-config — generate example config
-# ======================================================================
 
 # ======================================================================
 # i18n — 查看/导入 i18n 自动汉化数据

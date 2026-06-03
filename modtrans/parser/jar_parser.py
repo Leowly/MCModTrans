@@ -13,19 +13,18 @@ from __future__ import annotations
 import json
 import logging
 from pathlib import Path
-from zipfile import ZipFile, BadZipFile
-from typing import Optional
+from zipfile import BadZipFile, ZipFile
 
 from ..models import (
+    LEGACY_PACK_FORMAT_MAX,
+    MODERN_PACK_FORMAT_THRESHOLD,
     GameVersion,
     ModAssets,
     ModMetadata,
-    MODERN_PACK_FORMAT_THRESHOLD,
-    LEGACY_PACK_FORMAT_MAX,
 )
 from .encoding import decode_lang
-from .lang_parser import parse_lang
 from .json_parser import parse_json
+from .lang_parser import parse_lang
 
 logger = logging.getLogger(__name__)
 

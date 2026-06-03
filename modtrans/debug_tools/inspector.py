@@ -10,8 +10,7 @@ from __future__ import annotations
 from pathlib import Path
 from typing import Any
 
-from ..parser.jar_parser import JarParser, JarParseError
-from ..models import GameVersion
+from ..parser.jar_parser import JarParseError, JarParser
 
 
 def inspect_jar(jar_path: Path) -> dict[str, Any]:

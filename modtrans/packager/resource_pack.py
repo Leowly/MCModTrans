@@ -21,14 +21,14 @@ import logging
 from pathlib import Path
 
 from ..models import (
+    LEGACY_PACK_FORMAT_MAX,
+    MODERN_PACK_FORMAT_THRESHOLD,
+    PACK_FORMAT_MAP,
     GameVersion,
     ModAssets,
-    MODERN_PACK_FORMAT_THRESHOLD,
-    LEGACY_PACK_FORMAT_MAX,
-    PACK_FORMAT_MAP,
 )
-from ..parser.lang_parser import format_lang
 from ..parser.json_parser import format_json
+from ..parser.lang_parser import format_lang
 
 logger = logging.getLogger(__name__)
 
@@ -83,9 +83,9 @@ class ResourcePack:
         Returns:
             ZIP 文件路径。
         """
+        import os
         import shutil
         import zipfile
-        import os
 
         output_dir.mkdir(parents=True, exist_ok=True)
 

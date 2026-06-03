@@ -12,7 +12,7 @@ from pathlib import Path
 from typing import Any
 
 from ..models import GameVersion
-from ..parser.jar_parser import JarParser, JarParseError
+from ..parser.jar_parser import JarParseError, JarParser
 
 logger = logging.getLogger(__name__)
 
@@ -196,10 +196,10 @@ def print_analysis(
     """用 Rich 表格打印分析报告（CJK 字符自动对齐）。"""
 
     try:
+        from rich import box
         from rich.console import Console
         from rich.table import Table
         from rich.text import Text
-        from rich import box
         use_rich = True
     except ImportError:
         use_rich = False

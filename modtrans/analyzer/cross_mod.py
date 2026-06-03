@@ -1,10 +1,13 @@
 ﻿"""Cross-mod reference analyzer — detect missing translation keys."""
 from __future__ import annotations
-import logging, re
+
+import logging
+import re
 from collections import Counter
 from typing import TYPE_CHECKING
+
 if TYPE_CHECKING:
-    from ..models import ModAssets
+    pass
 logger = logging.getLogger(__name__)
 
 # Key format with colon: item.<modid>:<subtype>.<other_modid>:<effect>

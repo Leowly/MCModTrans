@@ -20,15 +20,14 @@ ZIP 内部结构::
 
 from __future__ import annotations
 
-import json
 import logging
 from pathlib import Path
 from typing import Optional
-from zipfile import ZipFile, BadZipFile
+from zipfile import BadZipFile, ZipFile
 
 from ..parser.encoding import decode_lang
-from ..parser.lang_parser import parse_lang
 from ..parser.json_parser import parse_json
+from ..parser.lang_parser import parse_lang
 
 logger = logging.getLogger(__name__)
 
@@ -178,7 +177,7 @@ class I18nReader:
         """
         all_mods = self.read_version(mc_version)
         merged: dict[str, str] = {}
-        for modid, entries in all_mods.items():
+        for _, entries in all_mods.items():
             merged.update(entries)
         return merged
 

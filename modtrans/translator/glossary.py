@@ -103,11 +103,8 @@ BUILTIN_GLOSSARY: dict[str, str] = {
     "Speed": "速度",
     # Common descriptors
     "Wooden": "木",
-    "Stone": "石",
     "Iron": "铁",
     "Golden": "金",
-    "Diamond": "钻石",
-    "Leather": "皮革",
     "Chainmail": "锁链",
 }
 
