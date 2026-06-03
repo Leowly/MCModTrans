@@ -18,6 +18,19 @@ logger = logging.getLogger(__name__)
 _logged_compat: set[str] = set()
 
 # ---------------------------------------------------------------------------
+# Mods to skip entirely — no translation needed
+# ---------------------------------------------------------------------------
+# These are infrastructure / API mods whose English text is technical and
+# does not benefit from in-game Chinese translation.
+
+SKIP_TRANSLATION_MODS: set[str] = {
+    "fabric",           # Fabric API — 技术性 API 文本，不需要翻译
+    "forge",            # Minecraft Forge — 同上
+    "mixinextras",      # MixinExtras — 运行时 mixin 库
+    "architectury",     # Architectury API — 跨平台 API
+}
+
+# ---------------------------------------------------------------------------
 # Known-bug patterns: keys that must stay in English
 # ---------------------------------------------------------------------------
 # Each entry: modid → (key_prefixes, reason)

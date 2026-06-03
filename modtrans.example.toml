@@ -14,6 +14,6 @@ max_keys_per_call = 100
 # 是否加载 CFPA i18n 社区汉化数据作为参考
 enable_i18n = true
 # 是否填充跨模组缺失翻译键
-enable_cross_mod_fill = true
+enable_cross_mod_fill = false
 # 是否为无语言文件的 mod 从模型推断物品名
-enable_untagged_fill = true
+enable_untagged_fill = false

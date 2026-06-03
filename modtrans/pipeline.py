@@ -134,7 +134,7 @@ def run_translation(
             log_fn("未找到匹配的 i18n 数据")
 
     # --- Compat filtering ---
-    from .compat import SKIP_TRANSLATION_PATTERNS
+    from .compat import SKIP_TRANSLATION_MODS, SKIP_TRANSLATION_PATTERNS
     compat_removed_total = 0
     for mod in all_mod_assets:
         entry = SKIP_TRANSLATION_PATTERNS.get(mod.modid)
@@ -151,6 +151,13 @@ def run_translation(
             compat_removed_total += removed
     if compat_removed_total:
         log_fn(f"兼容性过滤: 移除 {compat_removed_total} 条可能触发 mod bug 的汉化")
+
+    # --- Skip translation for infrastructure mods ---
+    before_count = len(all_mod_assets)
+    all_mod_assets = [m for m in all_mod_assets if m.modid not in SKIP_TRANSLATION_MODS]
+    skipped_count = before_count - len(all_mod_assets)
+    if skipped_count:
+        log_fn(f"跳过 {skipped_count} 个基础设施 mod (无需翻译)")
 
     # --- Cross-mod gap detection ---
     if cfg.general.enable_cross_mod_fill:

@@ -108,8 +108,12 @@ def _dict_to_config(data: dict[str, Any]) -> AppConfig:
             game_version=g.get("game_version", config.general.game_version),
             log_level=g.get("log_level", config.general.log_level),
             enable_i18n=bool(g.get("enable_i18n", config.general.enable_i18n)),
-            enable_cross_mod_fill=bool(g.get("enable_cross_mod_fill", config.general.enable_cross_mod_fill)),
-            enable_untagged_fill=bool(g.get("enable_untagged_fill", config.general.enable_untagged_fill)),
+            enable_cross_mod_fill=bool(
+                g.get("enable_cross_mod_fill", config.general.enable_cross_mod_fill)
+            ),
+            enable_untagged_fill=bool(
+                g.get("enable_untagged_fill", config.general.enable_untagged_fill)
+            ),
         )
 
     if "ai" in data:
@@ -122,7 +126,9 @@ def _dict_to_config(data: dict[str, Any]) -> AppConfig:
             temperature=float(a.get("temperature", d.temperature)),
             max_retries=int(a.get("max_retries", d.max_retries)),
             retry_base_delay=float(a.get("retry_base_delay", d.retry_base_delay)),
-            requests_per_minute=int(a.get("requests_per_minute", d.requests_per_minute)),
+            requests_per_minute=int(
+                a.get("requests_per_minute", d.requests_per_minute)
+            ),
             max_keys_per_call=int(a.get("max_keys_per_call", d.max_keys_per_call)),
         )
 
@@ -133,7 +139,9 @@ def _dict_to_config(data: dict[str, Any]) -> AppConfig:
             custom_prefix=p.get("custom_prefix", d.custom_prefix),
             system_prompt_file=p.get("system_prompt_file", d.system_prompt_file),
             glossary_file=p.get("glossary_file", d.glossary_file),
-            include_builtin_references=bool(p.get("include_builtin_references", d.include_builtin_references)),
+            include_builtin_references=bool(
+                p.get("include_builtin_references", d.include_builtin_references)
+            ),
         )
 
     if "packager" in data:
@@ -187,7 +195,6 @@ def load_config(path: Path | None = None) -> AppConfig:
     return AppConfig()
 
 
-
 _EXAMPLE_CONFIG = """# ModTrans 配置文件
 
 [ai]
@@ -204,9 +211,9 @@ max_keys_per_call = 100
 # 是否加载 CFPA i18n 社区汉化数据作为参考
 enable_i18n = true
 # 是否填充跨模组缺失翻译键
-enable_cross_mod_fill = true
+enable_cross_mod_fill = false
 # 是否为无语言文件的 mod 从模型推断物品名
-enable_untagged_fill = true
+enable_untagged_fill = false
 """
 
 
@@ -217,4 +224,3 @@ def generate_example_config() -> str:
     用户可删除 example 文件仅保留 modtrans.toml。
     """
     return _EXAMPLE_CONFIG
-
