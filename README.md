@@ -2,7 +2,7 @@
 
 自动提取 Minecraft 整合包中所有 Mod 的语言文件，调用 AI 批量翻译为简体中文，输出标准资源包。
 
-支持 **1.12.2 及以下**（`.lang` 格式）和 **1.13+**（`.json` 格式）。
+支持 **1.12.2-**（`.lang` 格式）和 **1.13+**（`.json` 格式）。
 
 ## 快速开始
 
@@ -52,13 +52,13 @@ mods/*.jar  ──Step 1──>  解析语言文件
                            ├─ 提取 en_us, zh_cn 条目
                            └─ 缓存解析结果（加速二次运行）
                           ↓
-                   ──Step 2──>  补充 i18n 汉化（CFPA 社区数据）
+                   ──Step 2──>  补充 i18n 汉化（可开关）
                           ↓
-                   ──Step 3──>  跨模组缺失键检测
+                   ──Step 3──>  跨模组缺失键检测（可开关）
                                  识别 A 模组引用了 B 模组的效果/物品
                                  但 B 新增了条目而 A 未更新
                           ↓
-                   ──Step 4──>  模型文件未命名物品补充
+                   ──Step 4──>  模型文件未命名物品补充（可开关）
                                  扫描 JAR 内的 models/item/*.json
                                  和 blockstates/*.json，
                                  自动生成未命名物品/方块对应的语言键
@@ -97,7 +97,7 @@ modtrans analyze -m "D:\path\to\modpack"
 **输出内容：**
 
 - **翻译覆盖率** — 每个 Mod 的英文条目数、已有中文条目数
-- **i18n 匹配** — 哪些 Mod 有 CFPA 社区的自动汉化数据
+- **i18n 匹配** — 哪些 Mod 有 i18 的自动汉化数据
 - **未命名物品/方块** — JAR 内模型文件中缺少对应语言条目的项
   （详见「未命名物品检测机制」章节）
 - **已 100% 翻译的 Mod** — 绿字列出
@@ -205,8 +205,6 @@ api_key = "sk-your-key-here"             # 直接填密钥
 model = "gpt-4o"                          # 模型名
 ```
 
-`modtrans.toml` 已加入 `.gitignore`，不会被提交到 Git。
-
 ---
 
 ## 未命名物品检测机制
@@ -247,15 +245,7 @@ mods/*.jar → 解析语言文件 → 按作者分批 → AI 翻译 → 输出�
 **DeepSeek：**
 ```toml
 [ai]
-api_base = "https://api.deepseek.com/v1"
+api_base = "https://api.deepseek.com/"
 api_key = "sk-your-deepseek-key"
-model = "deepseek-chat"
-```
-
-**通义千问：**
-```toml
-[ai]
-api_base = "https://dashscope.aliyuncs.com/compatible-mode/v1"
-api_key = "sk-your-qwen-key"
-model = "qwen-plus"
+model = "deepseek-v4-flash"
 ```
