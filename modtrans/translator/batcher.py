@@ -64,6 +64,7 @@ class Batcher:
 
         batches: list[TranslationBatch] = []
         bundle_mods: list[ModAssets] = []
+        bundle_keys_map: dict[int, set[str]] = {}
         bundle_keys_count = 0
 
         for mod, mod_keys in pending:
@@ -71,8 +72,9 @@ class Batcher:
 
             if key_count > self.max_batch_keys:
                 if bundle_mods:
-                    batches.append(self._create_batch(bundle_mods, self._bundle_id(bundle_mods)))
+                    batches.append(self._create_batch(bundle_mods, self._bundle_id(bundle_mods), mod_keys_map=bundle_keys_map))
                     bundle_mods = []
+                    bundle_keys_map = {}
                     bundle_keys_count = 0
 
                 sorted_keys = sorted(mod_keys)
@@ -89,15 +91,17 @@ class Batcher:
                 continue
 
             if bundle_keys_count + key_count > self.max_batch_keys and bundle_mods:
-                batches.append(self._create_batch(bundle_mods, self._bundle_id(bundle_mods)))
+                batches.append(self._create_batch(bundle_mods, self._bundle_id(bundle_mods), mod_keys_map=bundle_keys_map))
                 bundle_mods = []
+                bundle_keys_map = {}
                 bundle_keys_count = 0
 
             bundle_mods.append(mod)
+            bundle_keys_map[id(mod)] = mod_keys
             bundle_keys_count += key_count
 
         if bundle_mods:
-            batches.append(self._create_batch(bundle_mods, self._bundle_id(bundle_mods)))
+            batches.append(self._create_batch(bundle_mods, self._bundle_id(bundle_mods), mod_keys_map=bundle_keys_map))
 
         solo_count = sum(1 for b in batches if len(b.mods) == 1)
         bundle_count = sum(1 for b in batches if len(b.mods) > 1)
@@ -132,13 +136,17 @@ class Batcher:
         mods: list[ModAssets],
         batch_id: str,
         key_filter: set[str] | None = None,
+        mod_keys_map: dict[int, set[str]] | None = None,
     ) -> TranslationBatch:
         all_entries: dict[str, str] = {}
         for mod in mods:
-            untranslated = self._get_cached_keys(mod)
+            if mod_keys_map is not None and id(mod) in mod_keys_map:
+                mod_keys = mod_keys_map[id(mod)]
+            else:
+                mod_keys = self._get_cached_keys(mod)
             if key_filter is not None:
-                untranslated = untranslated & key_filter
-            for key in untranslated:
+                mod_keys = mod_keys & key_filter
+            for key in mod_keys:
                 all_entries[key] = mod.english_entries[key]
 
         mod_names = []

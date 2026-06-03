@@ -88,11 +88,14 @@ class AIClient:
     # Public API
     # ------------------------------------------------------------------
 
-    async def translate_batch(self, batch: TranslationBatch) -> TranslationResult:
+    async def translate_batch(self, batch: TranslationBatch, issues: list[str] | None = None) -> TranslationResult:
         """Translate a batch of mod entries.
 
         Args:
             batch: TranslationBatch with mods grouped together.
+            issues: Optional list to append human-readable issue summaries to.
+                    E.g. ["1 条模板文本未翻译", "2 个键缺失"].
+                    Callers can use these for smarter progress display.
 
         Returns:
             TranslationResult with translated entries and usage metadata.
@@ -128,8 +131,10 @@ class AIClient:
         missing_keys = expected_keys - set(translations.keys())
         missed_entries = {k: all_entries[k] for k in missing_keys if k in all_entries}
 
-        # 空值 key — 英文原文有内容但 AI 返回空值，视同缺失，纳入补译
-        # 注意：英文原文本身就是空的（如占位 tooltip）不算异常
+        # --- 统一收集问题并输出一条摘要 ---
+        issue_parts: list[str] = []
+
+        # 1. 空值 key — 英文原文有内容但 AI 返回空值，视同缺失，纳入补译
         empty_keys = {
             k
             for k, v in translations.items()
@@ -141,14 +146,10 @@ class AIClient:
             for k in empty_keys:
                 missed_entries[k] = all_entries[k]
                 del translations[k]
-            logger.info(
-                "批次 %s: %d 个翻译值为空，纳入集中补译",
-                batch.batch_id,
-                len(empty_keys),
-            )
+            issue_parts.append(f"{len(empty_keys)} 条返回为空")
 
-        # 模板文本未翻译 — AI 对含 %%s/%%d 等占位符的模板文本（如 "%%s of X"）
-        # 倾向于直接返回原文。检测并纳入补译（补译时 AI 有第二次机会翻对）
+        # 2. 模板文本未翻译 — AI 对含 %%s/%%d 等占位符的模板文本（如 "%%s of X"）
+        #    倾向于直接返回原文。检测并纳入补译（补译时 AI 有第二次机会翻对）
         _TEMPLATE_PAT = __import__("re").compile(r"%(\d+\$)?[sdf%]")
         template_keys = {
             k
@@ -161,28 +162,20 @@ class AIClient:
             for k in template_keys:
                 missed_entries[k] = all_entries[k]
                 del translations[k]
-            logger.info(
-                "批次 %s: %d 个模板文本未翻译，纳入集中补译",
-                batch.batch_id,
-                len(template_keys),
-            )
+            issue_parts.append(f"{len(template_keys)} 条模板文本未翻译")
 
-        if missed_entries:
-            missing_count = len(missing_keys) + len(empty_keys) + len(template_keys)
-            logger.info(
-                "批次 %s: %d 个键未返回，纳入集中补译",
-                batch.batch_id,
-                missing_count,
-            )
+        # 3. 未返回的 key（不含已收集的空值和模板）
+        still_missing = missing_keys - set(missed_entries.keys())
+        if still_missing:
+            issue_parts.append(f"{len(still_missing)} 个键未返回")
 
-        # 校验（仅日志）
-        validation_errors = self._validate_response(translations, expected_keys)
-        if validation_errors:
-            logger.info(
-                "批次 %s: %s",
-                batch.batch_id,
-                "; ".join(validation_errors[:3]),
-            )
+        if issue_parts:
+            total = len(missed_entries)
+            detail = "，".join(issue_parts)
+            msg = f"{total} 条需补译（{detail}）"
+            logger.info("批次 %s: %s", batch.batch_id, msg)
+            if issues is not None:
+                issues.append(msg)
 
         return TranslationResult(
             batch=batch,
