@@ -25,6 +25,7 @@ from ..models import (
 from .encoding import decode_lang
 from .json_parser import parse_json
 from .lang_parser import parse_lang
+from .metadata import extract_metadata as _extract_metadata_impl
 
 logger = logging.getLogger(__name__)
 
@@ -257,82 +258,10 @@ class JarParser:
     def extract_metadata(zf: ZipFile) -> ModMetadata:
         """Extract mod metadata from best available source.
 
-        Priority: mcmod.info > MANIFEST.MF > pack.mcmeta.
+        Delegates to metadata.py which handles Forge/Fabric/NeoForge.
         Never raises — returns best-effort ModMetadata.
         """
-        # Priority 1: mcmod.info (most complete metadata)
-        try:
-            info_bytes = zf.read("mcmod.info")
-            info = json.loads(info_bytes.decode("utf-8-sig"), strict=False)
-            # mcmod.info is usually a list of mod objects
-            if isinstance(info, list) and len(info) > 0:
-                # Some mods list their dependencies first in mcmod.info,
-                # so taking info[0] can return the wrong modid.
-                # Instead, prefer the entry with the most complete metadata.
-                _SKIP_MODIDS = {"minecraft", "forge", "mcp", "fml"}
-                best = None
-                for entry in info:
-                    modid = entry.get("modid", "")
-                    if modid in _SKIP_MODIDS:
-                        continue
-                    has_name = bool(entry.get("name"))
-                    has_version = bool(entry.get("version"))
-                    has_author = bool(entry.get("authorList") or entry.get("authors"))
-                    if has_name and has_version and has_author:
-                        best = entry
-                        break
-                    if best is None and has_name and has_version:
-                        best = entry
-                mod = best if best is not None else info[0]
-            elif isinstance(info, dict):
-                mod = info
-            else:
-                mod = {}
-
-            author = mod.get("authorList", mod.get("authors", []))
-            if isinstance(author, list):
-                author_str = ", ".join(author)
-            else:
-                author_str = str(author) if author else ""
-
-            return ModMetadata(
-                modid=mod.get("modid", ""),
-                name=mod.get("name", ""),
-                version=mod.get("version", ""),
-                author=author_str,
-                description=mod.get("description", ""),
-                game_version=mod.get("mcversion", ""),
-                credits=mod.get("credits", ""),
-                url=mod.get("url", ""),
-            )
-        except (KeyError, json.JSONDecodeError, UnicodeDecodeError):
-            pass
-
-        # Priority 2: META-INF/MANIFEST.MF
-        metadata = ModMetadata(modid="")
-        try:
-            manifest = zf.read("META-INF/MANIFEST.MF").decode("utf-8", errors="replace")
-            for line in manifest.splitlines():
-                if line.startswith("Implementation-Title:"):
-                    name = line.split(":", 1)[1].strip()
-                    if name:
-                        metadata.name = name
-                elif line.startswith("Implementation-Version:"):
-                    metadata.version = line.split(":", 1)[1].strip()
-        except (KeyError, UnicodeDecodeError):
-            pass
-
-        # Priority 3: pack.mcmeta (description only)
-        try:
-            mcmeta_bytes = zf.read("pack.mcmeta")
-            mcmeta = json.loads(mcmeta_bytes.decode("utf-8-sig"), strict=False)
-            desc = mcmeta.get("pack", {}).get("description", "")
-            if desc and not metadata.description:
-                metadata.description = desc
-        except (KeyError, json.JSONDecodeError, UnicodeDecodeError):
-            pass
-
-        return metadata
+        return _extract_metadata_impl(zf)
 
     # ------------------------------------------------------------------
     # Language file parsing

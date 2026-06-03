@@ -23,9 +23,7 @@ _logged_compat: set[str] = set()
 # These are infrastructure / API mods whose English text is technical and
 # does not benefit from in-game Chinese translation.
 
-SKIP_TRANSLATION_MODS: set[str] = {
-    "fabric",           # Fabric API — 技术性 API 文本，不需要翻译
-    "forge",            # Minecraft Forge — 同上
+SKIP_TRANSLATION_MODS: set[str] = {           # Minecraft Forge — 技术性 API 文本，不需要翻译
     "mixinextras",      # MixinExtras — 运行时 mixin 库
     "architectury",     # Architectury API — 跨平台 API
 }

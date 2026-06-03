@@ -78,7 +78,9 @@ class Batcher:
                 sorted_keys = sorted(mod_keys)
                 total = len(sorted_keys)
                 chunks = (total + self.max_batch_keys - 1) // self.max_batch_keys
-                mod_name = mod.metadata.name or mod.modid
+                mod_name = mod.modid
+                if mod.metadata.name and mod.metadata.name != mod.modid:
+                    mod_name = f"{mod.modid} ({mod.metadata.name})"
                 logger.info("%s 有 %d 条待翻译，拆为 %d 批（每批 ≤ %d）", mod_name, total, chunks, self.max_batch_keys)
                 for i in range(0, total, self.max_batch_keys):
                     chunk = set(sorted_keys[i : i + self.max_batch_keys])
